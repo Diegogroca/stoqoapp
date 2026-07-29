@@ -173,8 +173,11 @@ def crear_producto(
     que el resto del sistema no tenga que distinguir casos. Todo el inventario
     vive siempre en variantes.
 
-    Si existencia_inicial > 0, se registra como movimiento de entrada y no como
-    una edicion directa del stock: incluso el inventario inicial queda trazado.
+    existencia_inicial aplica la MISMA cantidad a todas las variantes, asi que
+    solo es util para productos simples. Para un producto con variantes, las
+    cantidades se capturan una por una despues, en la pantalla de existencias
+    (ver servicios.movimientos.cargar_existencias): 5 medianas azules y 4 grandes
+    azules son cifras distintas y cada una necesita su propio movimiento.
     """
     nombre = nombre.strip()
     if not nombre:
@@ -293,21 +296,23 @@ def _crear_variante(
 
 
 def _registrar_inventario_inicial(sesion: Session, variante: Variante, cantidad: int):
-    """El inventario inicial entra como movimiento, no como edicion del stock."""
-    sesion.add(
-        Movimiento(
-            empresa_id=variante.empresa_id,
-            variante_id=variante.id,
-            tipo="entrada",
-            cantidad=cantidad,
-            delta=cantidad,
-            stock_anterior=variante.stock,
-            stock_posterior=variante.stock + cantidad,
-            motivo="Inventario inicial",
-        )
+    """
+    El inventario inicial entra como movimiento, no como edicion del stock.
+
+    Delega en el motor de movimientos para que exista un unico lugar en todo el
+    sistema que modifica el stock de una variante.
+    """
+    from servicios.movimientos import registrar_movimiento
+
+    registrar_movimiento(
+        sesion,
+        variante.empresa_id,
+        variante.id,
+        "entrada",
+        cantidad,
+        motivo="Inventario inicial",
+        confirmar=False,
     )
-    variante.stock = variante.stock + cantidad
-    sesion.flush()
 
 
 def descripcion_variante(sesion: Session, variante: Variante) -> str:
