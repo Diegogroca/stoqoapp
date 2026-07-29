@@ -5,7 +5,7 @@ productos fisicos. Proyecto final de **Python para negocios**.
 
 **Estudiante:** Diego Gomez
 **Caso demostrativo:** KOVA, marca de polos premium
-**App desplegada:** _(pendiente: pegar aqui la URL de Vercel)_
+**App desplegada:** https://stoqoapp.vercel.app
 
 ---
 
