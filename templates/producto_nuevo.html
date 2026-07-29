@@ -8,7 +8,8 @@
   <p class="entrada">
     Si no defines atributos se crea un producto simple con una sola existencia
     que controlar. Si defines atributos, Stoqo genera una variante por cada
-    combinacion.
+    combinacion. Las cantidades se capturan en el siguiente paso, una por
+    variante.
   </p>
 
   {% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
@@ -51,16 +52,6 @@
         </div>
       </div>
 
-      <div class="campo">
-        <label for="existencia_inicial">Existencia inicial por variante</label>
-        <input type="number" id="existencia_inicial" name="existencia_inicial"
-               min="0" step="1" value="{{ datos.existencia_inicial or 0 }}">
-        <p class="ayuda">
-          Se registra como movimiento de entrada, no como una edicion directa del
-          stock: queda en el historial desde el primer dia.
-        </p>
-      </div>
-
       <h2 style="margin-top:26px">Atributos (opcional)</h2>
       <p class="ayuda" style="margin-bottom:14px">
         Separa los valores con comas. Maximo {{ maximo_variantes }} variantes por
@@ -95,7 +86,7 @@
 
       <p class="ayuda" id="conteo" style="margin-bottom:18px"></p>
 
-      <button type="submit" class="principal">Crear producto</button>
+      <button type="submit" class="principal">Continuar a existencias</button>
       <a href="/inventario" style="margin-left:14px;font-size:14px">Cancelar</a>
     </form>
   </div>

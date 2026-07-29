@@ -42,6 +42,7 @@
           <th class="num">Variantes</th>
           <th class="num">Stock</th>
           <th class="num">Minimo</th>
+          <th></th>
           <th>Estado</th>
         </tr>
       </thead>
@@ -58,6 +59,10 @@
           <td class="num">{{ fila.variantes|length }}</td>
           <td class="num">{{ fila.stock_total }}</td>
           <td class="num">{{ fila.producto.minimo }}</td>
+          <td>
+            <a href="/productos/{{ fila.producto.id }}/existencias"
+               style="font-size:13px">Existencias</a>
+          </td>
           <td>
             {% if fila.estado == "disponible" %}
               <span class="marca-estado ok">Disponible</span>
@@ -78,6 +83,7 @@
             <td></td>
             <td></td>
             <td class="num">{{ detalle.variante.stock }}</td>
+            <td></td>
             <td></td>
             <td></td>
           </tr>
