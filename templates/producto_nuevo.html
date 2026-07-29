@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block titulo %}Nuevo producto &middot; Stoqo{% endblock %}
+
+{% block contenido %}
+<div class="estrecho">
+  <p class="eyebrow">Alta de producto</p>
+  <h1>Agrega un producto.</h1>
+  <p class="entrada">
+    Si no defines atributos se crea un producto simple con una sola existencia
+    que controlar. Si defines atributos, Stoqo genera una variante por cada
+    combinacion.
+  </p>
+
+  {% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <form method="post" action="/productos/nuevo">
+      <div class="campo">
+        <label for="nombre">Nombre del producto</label>
+        <input type="text" id="nombre" name="nombre" required
+               value="{{ datos.nombre or '' }}" placeholder="Polo Premium">
+      </div>
+
+      <div class="duo">
+        <div class="campo">
+          <label for="categoria">Categoria</label>
+          <input type="text" id="categoria" name="categoria" list="categorias-existentes"
+                 value="{{ datos.categoria or '' }}" placeholder="Playeras">
+          <datalist id="categorias-existentes">
+            {% for nombre in categorias %}<option value="{{ nombre }}">{% endfor %}
+          </datalist>
+        </div>
+        <div class="campo">
+          <label for="unidad">Unidad de medida</label>
+          <input type="text" id="unidad" name="unidad"
+                 value="{{ datos.unidad or 'pieza' }}">
+        </div>
+      </div>
+
+      <div class="duo">
+        <div class="campo">
+          <label for="costo">Costo unitario</label>
+          <input type="number" id="costo" name="costo" min="0" step="0.01"
+                 value="{{ datos.costo or 0 }}">
+        </div>
+        <div class="campo">
+          <label for="minimo">Minimo de reposicion</label>
+          <input type="number" id="minimo" name="minimo" min="0" step="1"
+                 value="{{ datos.minimo or 0 }}">
+          <p class="ayuda">Se compara contra la suma de todas las variantes.</p>
+        </div>
+      </div>
+
+      <div class="campo">
+        <label for="existencia_inicial">Existencia inicial por variante</label>
+        <input type="number" id="existencia_inicial" name="existencia_inicial"
+               min="0" step="1" value="{{ datos.existencia_inicial or 0 }}">
+        <p class="ayuda">
+          Se registra como movimiento de entrada, no como una edicion directa del
+          stock: queda en el historial desde el primer dia.
+        </p>
+      </div>
+
+      <h2 style="margin-top:26px">Atributos (opcional)</h2>
+      <p class="ayuda" style="margin-bottom:14px">
+        Separa los valores con comas. Maximo {{ maximo_variantes }} variantes por
+        producto.
+      </p>
+
+      <div class="duo">
+        <div class="campo">
+          <label for="atributo_1">Primer atributo</label>
+          <input type="text" id="atributo_1" name="atributo_1"
+                 value="{{ datos.atributo_1 or '' }}" placeholder="Talla">
+        </div>
+        <div class="campo">
+          <label for="valores_1">Sus valores</label>
+          <input type="text" id="valores_1" name="valores_1"
+                 value="{{ datos.valores_1 or '' }}" placeholder="XS, S, M, L, XL">
+        </div>
+      </div>
+
+      <div class="duo">
+        <div class="campo">
+          <label for="atributo_2">Segundo atributo</label>
+          <input type="text" id="atributo_2" name="atributo_2"
+                 value="{{ datos.atributo_2 or '' }}" placeholder="Color">
+        </div>
+        <div class="campo">
+          <label for="valores_2">Sus valores</label>
+          <input type="text" id="valores_2" name="valores_2"
+                 value="{{ datos.valores_2 or '' }}" placeholder="negro, blanco, azul">
+        </div>
+      </div>
+
+      <p class="ayuda" id="conteo" style="margin-bottom:18px"></p>
+
+      <button type="submit" class="principal">Crear producto</button>
+      <a href="/inventario" style="margin-left:14px;font-size:14px">Cancelar</a>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Muestra cuantas variantes se crearan ANTES de enviar el formulario.
+  // El calculo se hace aqui porque es aritmetica simple y evita un viaje al
+  // servidor; el servidor lo vuelve a validar de todos modos.
+  const campos = ["valores_1", "valores_2"].map((id) => document.getElementById(id));
+  const conteo = document.getElementById("conteo");
+
+  function contar(texto) {
+    return texto.split(",").map((v) => v.trim()).filter(Boolean).length;
+  }
+
+  function actualizar() {
+    const cantidades = campos.map((campo) => contar(campo.value)).filter((n) => n > 0);
+    if (cantidades.length === 0) {
+      conteo.textContent = "Sin atributos: se creara un producto simple con una variante.";
+      return;
+    }
+    const total = cantidades.reduce((a, b) => a * b, 1);
+    conteo.textContent = `Se crearan ${total} variante${total === 1 ? "" : "s"}.`;
+  }
+
+  campos.forEach((campo) => campo.addEventListener("input", actualizar));
+  actualizar();
+</script>
+{% endblock %}

@@ -191,20 +191,162 @@
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
   }
+
+  /* ---------- Navegacion ---------- */
+  .barra nav { margin-left: auto; display: flex; gap: 18px; align-items: center; }
+  .barra nav a, .barra nav button {
+    color: #C7D5DE;
+    text-decoration: none;
+    font-size: 13px;
+    font-family: var(--texto);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 0;
+  }
+  .barra nav a:hover, .barra nav button:hover { color: #fff; }
+  .barra nav .empresa {
+    font-family: var(--dato);
+    font-size: 12px;
+    color: var(--acento);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+  }
+
+  /* ---------- Formularios ---------- */
+  .estrecho { max-width: 460px; }
+  .campo { margin-bottom: 16px; }
+  .campo label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: var(--tinta-70);
+  }
+  .campo .ayuda { font-size: 12px; color: var(--tinta-45); margin: 5px 0 0; }
+  input[type="text"], input[type="email"], input[type="password"],
+  input[type="number"], select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    font-family: var(--texto);
+    font-size: 15px;
+    color: var(--tinta);
+    background: var(--superficie);
+  }
+  input:focus, select:focus {
+    outline: 2px solid var(--acento);
+    outline-offset: 1px;
+    border-color: var(--acento);
+  }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  button.principal {
+    background: var(--acento);
+    color: #fff;
+    border: 0;
+    border-radius: 8px;
+    padding: 11px 20px;
+    font-family: var(--texto);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.principal:hover { background: #0B7A6D; }
+  .enlace-boton {
+    display: inline-block;
+    background: var(--acento);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 8px;
+    padding: 11px 20px;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .aviso-error {
+    background: var(--alerta-sup);
+    border: 1px solid #E9C9B4;
+    color: var(--alerta);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    margin-bottom: 18px;
+  }
+
+  /* ---------- Tablas ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left;
+    font-family: var(--dato);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--tinta-45);
+    font-weight: 400;
+    padding: 0 10px 10px 0;
+    border-bottom: 1px solid var(--borde);
+  }
+  td { padding: 11px 10px 11px 0; border-bottom: 1px solid var(--borde); }
+  td.num { text-align: right; font-family: var(--dato); font-weight: 700; }
+  th.num { text-align: right; padding-right: 0; }
+  .sku { font-family: var(--dato); font-size: 12px; color: var(--tinta-45); }
+
+  /* ---------- Metricas ---------- */
+  .metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 22px; }
+  .metrica { background: var(--superficie); border: 1px solid var(--borde); border-radius: var(--radio); padding: 18px; }
+  .metrica .etiqueta {
+    display: block;
+    font-family: var(--dato);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--tinta-45);
+    margin-bottom: 6px;
+  }
+  .metrica .cifra { font-family: var(--display); font-size: 27px; font-weight: 700; }
+
+  .vacio { text-align: center; padding: 48px 24px; }
+  .vacio h2 { font-size: 21px; margin-bottom: 8px; }
+  .vacio p { color: var(--tinta-70); max-width: 44ch; margin: 0 auto 22px; }
+
+  .encabezado-seccion {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  @media (max-width: 620px) {
+    .duo { grid-template-columns: 1fr; }
+    .encabezado-seccion { flex-direction: column; align-items: flex-start; }
+    table { font-size: 13px; }
+  }
 </style>
 {% block estilos %}{% endblock %}
 </head>
 <body>
   <header class="barra">
     <span class="marca">Sto<span>q</span>o</span>
+    {% if empresa %}
+    <nav>
+      <span class="empresa">{{ empresa.nombre }}</span>
+      <a href="/inventario">Inventario</a>
+      <a href="/productos/nuevo">Nuevo producto</a>
+      <form method="post" action="/salir" style="display:inline;margin:0">
+        <button type="submit">Salir</button>
+      </form>
+    </nav>
+    {% else %}
     <span class="contexto">{% block contexto %}{% endblock %}</span>
+    {% endif %}
   </header>
 
   <main class="lienzo">
     {% block contenido %}{% endblock %}
 
     <footer>
-      Stoqo v{{ version }} &middot; Proyecto final de Python para negocios &middot; Diego Gomez
+      Stoqo{% if version %} v{{ version }}{% endif %} &middot; Proyecto final de Python para negocios &middot; Diego Gomez
     </footer>
   </main>
 </body>

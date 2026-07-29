@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block titulo %}Crear cuenta &middot; Stoqo{% endblock %}
+{% block contexto %}crear cuenta{% endblock %}
+
+{% block contenido %}
+<div class="estrecho">
+  <p class="eyebrow">Nueva empresa</p>
+  <h1>Crea tu inventario.</h1>
+  <p class="entrada">
+    Al registrarte se crea tu empresa y quedas como su unica persona
+    propietaria. Los datos de tu marca no se mezclan con los de nadie mas.
+  </p>
+
+  {% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <form method="post" action="/registro">
+      <div class="campo">
+        <label for="empresa">Nombre de tu marca o negocio</label>
+        <input type="text" id="empresa" name="empresa" required
+               value="{{ datos.empresa or '' }}" placeholder="KOVA">
+      </div>
+      <div class="campo">
+        <label for="correo">Correo</label>
+        <input type="email" id="correo" name="correo" required
+               value="{{ datos.correo or '' }}" placeholder="tu@correo.com">
+      </div>
+      <div class="campo">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" name="password" required minlength="8">
+        <p class="ayuda">Minimo 8 caracteres.</p>
+      </div>
+      <button type="submit" class="principal">Crear empresa</button>
+    </form>
+  </div>
+
+  <p class="ayuda">Ya tienes cuenta? <a href="/entrar">Entra aqui</a>.</p>
+</div>
+{% endblock %}

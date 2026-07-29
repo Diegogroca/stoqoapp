@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block titulo %}Inventario &middot; {{ empresa.nombre }}{% endblock %}
+
+{% block contenido %}
+{% if not catalogo %}
+  <div class="panel vacio">
+    <p class="eyebrow">Primer paso</p>
+    <h2>Tu inventario esta listo para empezar.</h2>
+    <p>
+      Registra tu primer producto. Si vendes en tallas, colores u otras
+      variantes, Stoqo genera todas las combinaciones por ti.
+    </p>
+    <a class="enlace-boton" href="/productos/nuevo">Agregar primer producto</a>
+  </div>
+{% else %}
+  <div class="metricas">
+    <div class="metrica">
+      <span class="etiqueta">Unidades disponibles</span>
+      <span class="cifra">{{ unidades }}</span>
+    </div>
+    <div class="metrica">
+      <span class="etiqueta">Valor a costo</span>
+      <span class="cifra">${{ "%.2f"|format(valor_total) }}</span>
+    </div>
+    <div class="metrica">
+      <span class="etiqueta">Productos con alerta</span>
+      <span class="cifra">{{ con_alerta }}</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="encabezado-seccion">
+      <h2>Catalogo</h2>
+      <a class="enlace-boton" href="/productos/nuevo">Nuevo producto</a>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th>Unidad</th>
+          <th class="num">Variantes</th>
+          <th class="num">Stock</th>
+          <th class="num">Minimo</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fila in catalogo %}
+        <tr>
+          <td>
+            {{ fila.producto.nombre }}
+            {% if fila.variantes|length == 1 %}
+              <div class="sku">{{ fila.variantes[0].variante.sku }}</div>
+            {% endif %}
+          </td>
+          <td>{{ fila.producto.unidad }}</td>
+          <td class="num">{{ fila.variantes|length }}</td>
+          <td class="num">{{ fila.stock_total }}</td>
+          <td class="num">{{ fila.producto.minimo }}</td>
+          <td>
+            {% if fila.estado == "disponible" %}
+              <span class="marca-estado ok">Disponible</span>
+            {% elif fila.estado == "bajo" %}
+              <span class="marca-estado espera">Stock bajo</span>
+            {% else %}
+              <span class="marca-estado espera">Agotado</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% if fila.variantes|length > 1 %}
+          {% for detalle in fila.variantes %}
+          <tr>
+            <td style="padding-left:18px;color:var(--tinta-70)">
+              {{ detalle.descripcion }}
+              <div class="sku">{{ detalle.variante.sku }}</div>
+            </td>
+            <td></td>
+            <td></td>
+            <td class="num">{{ detalle.variante.stock }}</td>
+            <td></td>
+            <td></td>
+          </tr>
+          {% endfor %}
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}
