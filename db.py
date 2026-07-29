@@ -87,8 +87,19 @@ def crear_tablas_para_pruebas(url: str = "sqlite+pysqlite:///:memory:"):
     se pueden verificar sin red.
     """
     from sqlalchemy import event
+    from sqlalchemy.pool import StaticPool
 
-    motor_pruebas = create_engine(url, future=True)
+    # StaticPool es imprescindible con SQLite en memoria: sin el, cada conexion
+    # nueva abre una base de datos VACIA y distinta, asi que las pruebas que
+    # abren varias sesiones (por ejemplo las que llaman a la app por HTTP) no
+    # encontrarian las tablas. StaticPool reutiliza una sola conexion, de modo
+    # que todas las sesiones ven la misma base.
+    motor_pruebas = create_engine(
+        url,
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
 
     # SQLite ignora las llaves foraneas salvo que se activen por conexion.
     # El listener se registra ANTES de crear las tablas: si se registrara
