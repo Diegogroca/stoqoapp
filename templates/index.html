@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block titulo %}Stoqo &middot; Estado del sistema{% endblock %}
+{% block contexto %}etapa 0 &middot; {{ hora }}{% endblock %}
+
+{% block estilos %}
+<style>
+  /* Cinta de movimiento: el elemento central de Stoqo.
+     Todo cambio de inventario se lee siempre igual:
+     stock anterior, delta firmado, stock posterior. */
+  .cinta {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    overflow: hidden;
+    font-family: var(--dato);
+  }
+  .cinta > div {
+    padding: 14px 18px;
+    flex: 1;
+  }
+  .cinta .etiqueta {
+    display: block;
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--tinta-45);
+    margin-bottom: 4px;
+  }
+  .cinta .cifra { font-size: 22px; font-weight: 700; }
+  .cinta .delta {
+    background: var(--tinta);
+    color: #fff;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    min-width: 108px;
+  }
+  .cinta .delta .etiqueta { color: #92A5B4; }
+  .cinta .delta .cifra { color: var(--acento); }
+  .cinta .posterior { background: var(--acento-sup); }
+
+  .nota {
+    font-size: 13px;
+    color: var(--tinta-45);
+    margin: 10px 0 0;
+  }
+  @media (max-width: 560px) {
+    .cinta { flex-direction: column; }
+    .cinta .delta { min-width: 0; text-align: left; }
+  }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<p class="eyebrow">Fase de codigo &middot; etapa 0 de 8</p>
+<h1>El despliegue funciona.<br>Ahora se construye el inventario.</h1>
+<p class="entrada">
+  Esta pantalla existe para comprobar una sola cosa antes de escribir logica de
+  negocio: que la aplicacion de Python corre publicamente en Vercel y responde.
+  Cada etapa siguiente agrega funcionalidad sobre una base ya verificada.
+</p>
+
+<div class="panel">
+  <h2>Como se leera cada cambio de inventario</h2>
+  <div class="cinta">
+    <div>
+      <span class="etiqueta">Stock anterior</span>
+      <span class="cifra">24</span>
+    </div>
+    <div class="delta">
+      <span class="etiqueta">Salida</span>
+      <span class="cifra">&minus;2</span>
+    </div>
+    <div class="posterior">
+      <span class="etiqueta">Stock posterior</span>
+      <span class="cifra">22</span>
+    </div>
+  </div>
+  <p class="nota">
+    Ejemplo de referencia, sin datos reales todavia. Ningun movimiento editara el
+    stock directamente: se registra el anterior, el delta firmado y el posterior,
+    para que cualquier cifra del dashboard pueda reconstruirse desde su historial.
+  </p>
+</div>
+
+<div class="rejilla">
+  <div class="panel">
+    <h2>Entorno de ejecucion</h2>
+    <dl class="lista-dato">
+      <div><dt>Version de Stoqo</dt><dd>{{ version }}</dd></div>
+      <div><dt>Python</dt><dd>{{ python }}</dd></div>
+      <div><dt>Hora del servidor</dt><dd>{{ hora }}</dd></div>
+      <div><dt>Verificacion tecnica</dt><dd><a href="/health">/health</a></dd></div>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <h2>Configuracion</h2>
+    <dl class="lista-dato">
+      {% for nombre, datos in configuracion.items() %}
+      <div>
+        <dt>{{ datos.descripcion }}</dt>
+        <dd>
+          {% if datos.configurada %}
+            <span class="marca-estado ok">Lista</span>
+          {% else %}
+            <span class="marca-estado espera">Pendiente</span>
+          {% endif %}
+        </dd>
+      </div>
+      {% endfor %}
+    </dl>
+    <p class="nota">
+      Las llaves viven en las variables de entorno de Vercel, nunca en el
+      repositorio. Aqui solo se muestra si existen.
+    </p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Dependencias del desarrollo</h2>
+  <ol class="etapas">
+    {% for numero, nombre, estado in etapas %}
+    <li class="{{ estado }}">
+      <span class="num">{{ numero }}</span>
+      <span class="nombre">{{ nombre }}</span>
+      {% if estado == "actual" %}
+        <span class="marca-estado ok">En curso</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="nota">
+    El orden no es cronologico por gusto: cada etapa depende de que la anterior
+    entregue datos confiables. Los reportes no se construyen antes del motor de
+    movimientos porque una cifra correcta necesita un dato correcto.
+  </p>
+</div>
+{% endblock %}

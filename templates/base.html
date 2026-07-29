@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Stoqo{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Tokens de diseño ----------
+     Identidad: tecnica, limpia, profesional.
+     Un solo acento (teal) para lo que cambia el inventario. */
+  :root {
+    --tinta:      #0B1B2B;
+    --tinta-70:   #47596B;
+    --tinta-45:   #7C8B99;
+    --acento:     #0E9384;
+    --acento-sup: #E6F4F2;
+    --alerta:     #B4541E;
+    --alerta-sup: #FBEEE6;
+    --pagina:     #F5F7F8;
+    --superficie: #FFFFFF;
+    --borde:      #DFE6E9;
+
+    --display: "Space Grotesk", system-ui, sans-serif;
+    --texto:   "Inter", system-ui, sans-serif;
+    --dato:    "JetBrains Mono", ui-monospace, monospace;
+
+    --radio: 10px;
+    --sombra: 0 1px 2px rgba(11, 27, 43, .05), 0 8px 24px rgba(11, 27, 43, .04);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--pagina);
+    color: var(--tinta);
+    font-family: var(--texto);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Barra superior ---------- */
+  .barra {
+    background: var(--tinta);
+    color: #fff;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .marca {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 19px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+  .marca span { color: var(--acento); }
+  .barra .contexto {
+    margin-left: auto;
+    font-family: var(--dato);
+    font-size: 12px;
+    color: #92A5B4;
+  }
+
+  /* ---------- Contenedor ---------- */
+  .lienzo {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+  }
+
+  /* ---------- Tipografia ---------- */
+  .eyebrow {
+    font-family: var(--dato);
+    font-size: 11px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--acento);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.15;
+    letter-spacing: -.02em;
+    margin: 0 0 12px;
+  }
+  h2 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 17px;
+    letter-spacing: -.01em;
+    margin: 0 0 14px;
+  }
+  p.entrada {
+    font-size: 17px;
+    color: var(--tinta-70);
+    max-width: 60ch;
+    margin: 0 0 32px;
+  }
+
+  /* ---------- Tarjetas ---------- */
+  .panel {
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    box-shadow: var(--sombra);
+    padding: 22px;
+    margin-bottom: 20px;
+  }
+  .rejilla {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  /* ---------- Datos ---------- */
+  .lista-dato { margin: 0; }
+  .lista-dato div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--borde);
+  }
+  .lista-dato div:last-child { border-bottom: 0; }
+  .lista-dato dt { color: var(--tinta-70); font-size: 14px; }
+  .lista-dato dd {
+    margin: 0;
+    font-family: var(--dato);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .marca-estado {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--dato);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+  }
+  .marca-estado.ok      { background: var(--acento-sup); color: var(--acento); }
+  .marca-estado.espera  { background: var(--alerta-sup); color: var(--alerta); }
+
+  /* ---------- Etapas ---------- */
+  ol.etapas { list-style: none; margin: 0; padding: 0; counter-reset: none; }
+  ol.etapas li {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--borde);
+  }
+  ol.etapas li:last-child { border-bottom: 0; }
+  ol.etapas .num {
+    font-family: var(--dato);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--tinta-45);
+    text-align: right;
+  }
+  ol.etapas li.actual .num,
+  ol.etapas li.actual .nombre { color: var(--acento); font-weight: 600; }
+
+  footer {
+    margin-top: 40px;
+    padding-top: 18px;
+    border-top: 1px solid var(--borde);
+    font-size: 13px;
+    color: var(--tinta-45);
+  }
+  a { color: var(--acento); }
+
+  @media (max-width: 560px) {
+    .lienzo { padding: 24px 16px 48px; }
+    .barra .contexto { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+{% block estilos %}{% endblock %}
+</head>
+<body>
+  <header class="barra">
+    <span class="marca">Sto<span>q</span>o</span>
+    <span class="contexto">{% block contexto %}{% endblock %}</span>
+  </header>
+
+  <main class="lienzo">
+    {% block contenido %}{% endblock %}
+
+    <footer>
+      Stoqo v{{ version }} &middot; Proyecto final de Python para negocios &middot; Diego Gomez
+    </footer>
+  </main>
+</body>
+</html>
