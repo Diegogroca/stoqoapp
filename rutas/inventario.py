@@ -9,6 +9,8 @@ mensaje de que no hay nada.
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -17,6 +19,7 @@ from sqlalchemy.orm import Session
 from alcance import AlcanceEmpresa
 from dependencias import identidad, obtener_sesion, redirigir_a_entrada
 from modelos import Categoria, Empresa, Producto, Variante
+from servicios.movimientos import CantidadInvalida, cargar_existencias
 from servicios.productos import (
     MAXIMO_VARIANTES,
     CombinacionRepetida,
@@ -142,7 +145,6 @@ def procesar_alta(
     unidad: str = Form("pieza"),
     costo: float = Form(0),
     minimo: int = Form(0),
-    existencia_inicial: int = Form(0),
     atributo_1: str = Form(""),
     valores_1: str = Form(""),
     atributo_2: str = Form(""),
@@ -159,7 +161,6 @@ def procesar_alta(
         "unidad": unidad,
         "costo": costo,
         "minimo": minimo,
-        "existencia_inicial": existencia_inicial,
         "atributo_1": atributo_1,
         "valores_1": valores_1,
         "atributo_2": atributo_2,
@@ -187,7 +188,7 @@ def procesar_alta(
     atributos = _leer_atributos(atributo_1, valores_1, atributo_2, valores_2)
 
     try:
-        crear_producto(
+        producto = crear_producto(
             sesion,
             identificado["empresa"],
             nombre,
@@ -196,7 +197,6 @@ def procesar_alta(
             costo=costo,
             minimo=minimo,
             atributos=atributos,
-            existencia_inicial=existencia_inicial,
         )
     except DemasiadasVariantes as problema:
         return con_error(str(problema))
@@ -205,7 +205,12 @@ def procesar_alta(
     except ValueError as problema:
         return con_error(str(problema))
 
-    return RedirectResponse("/inventario", status_code=303)
+    # El producto ya existe pero todavia no tiene existencias. Se manda a la
+    # pantalla de captura por variante, porque cada combinacion tiene su propia
+    # cantidad: 5 medianas azules no es lo mismo que 4 grandes azules.
+    return RedirectResponse(
+        f"/productos/{producto.id}/existencias", status_code=303
+    )
 
 
 @router.post("/productos/vista-previa", response_class=HTMLResponse)
@@ -225,3 +230,126 @@ def vista_previa(
     atributos = _leer_atributos(atributo_1, valores_1, atributo_2, valores_2)
     total = contar_combinaciones(atributos)
     return HTMLResponse(f"{total}")
+
+# ---------------------------------------------------------------------------
+# Captura de existencias por variante
+# ---------------------------------------------------------------------------
+
+
+def _variantes_del_producto(sesion: Session, producto: Producto) -> list[dict]:
+    """Lista las variantes activas con su descripcion legible y su stock."""
+    variantes = sesion.scalars(
+        select(Variante)
+        .where(Variante.producto_id == producto.id, Variante.activa == True)  # noqa: E712
+        .order_by(Variante.sku)
+    ).all()
+    return [
+        {
+            "variante": variante,
+            "descripcion": descripcion_variante(sesion, variante),
+        }
+        for variante in variantes
+    ]
+
+
+@router.get("/productos/{producto_id}/existencias", response_class=HTMLResponse)
+def mostrar_existencias(
+    producto_id: uuid.UUID,
+    request: Request,
+    sesion: Session = Depends(obtener_sesion),
+):
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    alcance = AlcanceEmpresa(sesion, datos["empresa"])
+    producto = alcance.obtener(Producto, producto_id)
+    if producto is None:
+        # Un id de otra empresa se comporta como inexistente, no como prohibido.
+        return RedirectResponse("/inventario", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="existencias.html",
+        context={
+            "producto": producto,
+            "filas": _variantes_del_producto(sesion, producto),
+        },
+    )
+
+
+@router.post("/productos/{producto_id}/existencias")
+async def procesar_existencias(
+    producto_id: uuid.UUID,
+    request: Request,
+    sesion: Session = Depends(obtener_sesion),
+):
+    """
+    Aplica las cantidades capturadas variante por variante.
+
+    Los campos del formulario llegan como cantidad_<id_de_variante>, asi que se
+    leen dinamicamente: no se puede declarar un parametro por variante cuando el
+    numero de variantes lo decide el usuario.
+    """
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    alcance = AlcanceEmpresa(sesion, datos["empresa"])
+    producto = alcance.obtener(Producto, producto_id)
+    if producto is None:
+        return RedirectResponse("/inventario", status_code=303)
+
+    formulario = await request.form()
+    motivo = (formulario.get("motivo") or "Inventario inicial").strip()
+
+    cantidades: dict[uuid.UUID, int] = {}
+    invalidos: list[str] = []
+
+    for clave, valor in formulario.items():
+        if not clave.startswith("cantidad_"):
+            continue
+        texto = (valor or "").strip()
+        if not texto:
+            continue
+        try:
+            cantidad = int(texto)
+        except ValueError:
+            invalidos.append(clave.removeprefix("cantidad_"))
+            continue
+        if cantidad < 0:
+            invalidos.append(clave.removeprefix("cantidad_"))
+            continue
+        if cantidad > 0:
+            # Solo se aceptan variantes que pertenezcan a esta empresa.
+            variante = alcance.obtener(Variante, uuid.UUID(clave.removeprefix("cantidad_")))
+            if variante is not None and variante.producto_id == producto.id:
+                cantidades[variante.id] = cantidad
+
+    def con_error(mensaje: str):
+        return templates.TemplateResponse(
+            request=request,
+            name="existencias.html",
+            context={
+                "producto": producto,
+                "filas": _variantes_del_producto(sesion, producto),
+                "error": mensaje,
+            },
+            status_code=400,
+        )
+
+    if invalidos:
+        return con_error(
+            "Las cantidades deben ser numeros enteros mayores o iguales a cero."
+        )
+
+    if not cantidades:
+        # No es un error: puede que el producto se cargue mas tarde.
+        return RedirectResponse("/inventario", status_code=303)
+
+    try:
+        cargar_existencias(sesion, datos["empresa"], cantidades, motivo=motivo)
+    except CantidadInvalida as problema:
+        return con_error(str(problema))
+
+    return RedirectResponse("/inventario", status_code=303)
