@@ -1,0 +1,29 @@
+name: Pruebas
+
+# Se ejecuta en cada push y en cada pull request.
+# Si las pruebas fallan, el commit queda marcado en rojo en GitHub:
+# es la red de seguridad antes de que Vercel publique un cambio roto.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements-dev.txt
+
+      - name: Ejecutar pruebas
+        run: pytest -v
