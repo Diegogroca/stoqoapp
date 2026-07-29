@@ -5,7 +5,7 @@ productos fisicos. Proyecto final de **Python para negocios**.
 
 **Estudiante:** Diego Gomez
 **Caso demostrativo:** KOVA, marca de polos premium
-**App desplegada:** _(pendiente: pegar aqui la URL de Vercel)_
+**App desplegada:** https://stoqoapp.vercel.app
 
 ---
 
@@ -56,6 +56,10 @@ nativa por la plataforma.
 
 ```
 main.py              Entrypoint. Vercel busca la instancia `app` aqui.
+modelos.py           Modelos SQLAlchemy: el esquema declarado en Python.
+db.py                Conexion a Postgres, preparada para serverless.
+alcance.py           Capa que acota toda lectura a la empresa autenticada.
+migrations/          Esquema SQL que se ejecuta en Supabase.
 templates/           Plantillas Jinja2 (base.html define los tokens de diseño).
 tests/               Un archivo de pruebas por etapa.
 docs/bitacora-ia.md  Prompts, resultados y correcciones del trabajo con IA.
@@ -89,8 +93,8 @@ pytest -v
 
 | # | Etapa | Estado |
 |---|---|---|
-| 0 | Esqueleto y despliegue en Vercel | En curso |
-| 1 | Modelo de datos y aislamiento por empresa | Pendiente |
+| 0 | Esqueleto y despliegue en Vercel | Listo |
+| 1 | Modelo de datos y aislamiento por empresa | En curso |
 | 2 | Registro de cuenta y onboarding | Pendiente |
 | 3 | Productos, atributos y variantes | Pendiente |
 | 4 | Motor de movimientos | Pendiente |
@@ -113,7 +117,21 @@ correcta necesita un dato correcto.
 - **Sin secretos en el repositorio.** Las llaves viven en las variables de
   entorno de Vercel. La pantalla de estado solo indica si existen.
 - **Pooler en modo transaccion para Supabase.** En serverless las conexiones se
-  abren y cierran en cada invocacion; la conexion directa agota el limite.
+  abren y cierran en cada invocacion; la conexion directa agota el limite. Por
+  eso el motor usa `NullPool`: el pool real vive en Supabase, no en la funcion.
+- **Aislamiento en dos capas.** Las llaves foraneas compuestas
+  `(empresa_id, producto_id)` y `(empresa_id, variante_id)` impiden que la base
+  de datos mezcle marcas incluso si el codigo falla. Encima, `AlcanceEmpresa`
+  concentra el filtro de lectura en un solo lugar auditable en lugar de
+  repetirlo en cada consulta.
+- **Reglas de negocio como restricciones, no como comentarios.** SKU unico por
+  empresa, un propietario por empresa, costo no negativo, cantidad positiva,
+  `stock_posterior = stock_anterior + delta` y una sola compensacion por
+  movimiento viven en el esquema. La base rechaza un historial que se
+  contradice.
+- **Las pruebas no tocan Supabase.** Corren sobre SQLite en memoria con el mismo
+  modelo declarado. El CI no necesita credenciales de produccion y las pruebas
+  son repetibles sin red.
 
 ---
 
