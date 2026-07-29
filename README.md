@@ -59,6 +59,11 @@ main.py              Entrypoint. Vercel busca la instancia `app` aqui.
 modelos.py           Modelos SQLAlchemy: el esquema declarado en Python.
 db.py                Conexion a Postgres, preparada para serverless.
 alcance.py           Capa que acota toda lectura a la empresa autenticada.
+seguridad.py         Hash de contraseñas y firma de cookies de sesion.
+dependencias.py      Sesion de base de datos y empresa autenticada por peticion.
+vistas.py            Configuracion unica de las plantillas Jinja2.
+servicios/           Logica de negocio: cuentas y productos.
+rutas/               Pantallas y formularios (routers de FastAPI).
 migrations/          Esquema SQL que se ejecuta en Supabase.
 templates/           Plantillas Jinja2 (base.html define los tokens de diseño).
 tests/               Un archivo de pruebas por etapa.
@@ -94,9 +99,9 @@ pytest -v
 | # | Etapa | Estado |
 |---|---|---|
 | 0 | Esqueleto y despliegue en Vercel | Listo |
-| 1 | Modelo de datos y aislamiento por empresa | En curso |
-| 2 | Registro de cuenta y onboarding | Pendiente |
-| 3 | Productos, atributos y variantes | Pendiente |
+| 1 | Modelo de datos y aislamiento por empresa | Listo |
+| 2 | Registro de cuenta y onboarding | Listo |
+| 3 | Productos, atributos y variantes | En curso |
 | 4 | Motor de movimientos | Pendiente |
 | 5 | Dashboard y alertas | Pendiente |
 | 6 | Reportes, filtros y exportaciones | Pendiente |
@@ -129,6 +134,15 @@ correcta necesita un dato correcto.
   `stock_posterior = stock_anterior + delta` y una sola compensacion por
   movimiento viven en el esquema. La base rechaza un historial que se
   contradice.
+- **Contraseñas y sesiones con la biblioteca estandar.** pbkdf2_hmac con 200.000
+  iteraciones y sal por cuenta para las contraseñas; cookie firmada con HMAC para
+  las sesiones. Sin dependencias extra que engorden el bundle serverless.
+- **La cookie es `secure` segun el esquema de la peticion.** Con `secure=True`
+  fijo, la sesion funciona en Vercel pero es imposible probar la app en local o
+  desde pytest, porque una cookie secure no viaja por http.
+- **El total de variantes se calcula antes de crearlas.** El producto cartesiano
+  crece multiplicativamente (7 x 7 = 49, pero 30 x 30 = 900), asi que se cuenta y
+  se valida contra un tope antes de escribir en la base.
 - **Las pruebas no tocan Supabase.** Corren sobre SQLite en memoria con el mismo
   modelo declarado. El CI no necesita credenciales de produccion y las pruebas
   son repetibles sin red.
