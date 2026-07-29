@@ -1,50 +1,48 @@
 """
 Stoqo - Plataforma multiempresa de control de inventario.
 
-Punto de entrada de la aplicacion. Vercel busca una instancia de FastAPI
-llamada `app` en este archivo y despliega todo como una sola funcion.
+Punto de entrada de la aplicacion. Vercel busca una instancia de FastAPI llamada
+`app` en este archivo y despliega todo como una sola funcion.
 
-Etapa 1: al esqueleto de la Etapa 0 se suma el modelo de datos. La pantalla de
-estado ahora reporta si la conexion con la base de datos responde, para poder
-verificar la configuracion sin abrir Supabase.
+Este modulo solo ensambla: registra los routers y expone la pantalla publica de
+inicio y la verificacion tecnica. La logica de negocio vive en servicios/ y las
+pantallas en rutas/.
 """
 
 import os
 import sys
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse, RedirectResponse
 
-# Rutas absolutas: en Vercel el directorio de trabajo no siempre es la raiz
-# del proyecto, asi que nunca usamos rutas relativas para las plantillas.
-BASE_DIR = Path(__file__).resolve().parent
-
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+from dependencias import SesionRequerida, identidad
+from rutas import cuentas, inventario
+from vistas import templates
 
 ZONA = ZoneInfo("America/Mexico_City")
 
 app = FastAPI(
     title="Stoqo",
     description="MVP multiempresa de control de inventario",
-    version="0.1.0",
+    version="0.3.0",
 )
+
+app.include_router(cuentas.router)
+app.include_router(inventario.router)
+
+
+@app.exception_handler(SesionRequerida)
+def sin_sesion(request: Request, _error: SesionRequerida):
+    """Cualquier ruta protegida sin sesion manda a la pantalla de entrada."""
+    return RedirectResponse("/entrar", status_code=303)
 
 
 def estado_configuracion() -> dict:
-    """
-    Revisa que variables de entorno estan presentes sin exponer su valor.
-
-    Se usa en la pantalla de estado y en /health para saber en que punto del
-    checkpoint tecnologico esta el proyecto: primero despliegue, despues datos.
-    """
+    """Revisa que variables de entorno existen, sin exponer su valor."""
     variables = {
-        "DATABASE_URL": "Base de datos Supabase",
-        "SUPABASE_URL": "Proyecto de Supabase",
-        "SUPABASE_ANON_KEY": "Llave publica de Supabase",
+        "DATABASE_URL": "Base de datos",
         "SESSION_SECRET": "Firma de sesiones",
     }
     return {
@@ -54,13 +52,7 @@ def estado_configuracion() -> dict:
 
 
 def estado_base_de_datos() -> dict:
-    """
-    Comprueba la conexion con Postgres sin tumbar la aplicacion si falla.
-
-    Se importa db aqui dentro y no arriba: si la base de datos no esta
-    configurada, la pantalla de estado debe seguir cargando para poder
-    diagnosticar el problema.
-    """
+    """Comprueba la conexion sin tumbar la aplicacion si falla."""
     try:
         from db import base_de_datos_responde
 
@@ -78,7 +70,7 @@ def health() -> JSONResponse:
         {
             "aplicacion": "Stoqo",
             "version": app.version,
-            "etapa": "1 - modelo de datos y aislamiento por empresa",
+            "etapa": "3 - productos, atributos y variantes",
             "python": sys.version.split()[0],
             "base_de_datos": estado_base_de_datos(),
             "hora_servidor": datetime.now(ZONA).isoformat(timespec="seconds"),
@@ -93,12 +85,15 @@ def health() -> JSONResponse:
 
 @app.get("/")
 def inicio(request: Request):
-    """Pantalla de estado del proyecto: que ya funciona y que sigue."""
+    """Pantalla publica. Si ya hay sesion, va directo al inventario."""
+    if identidad(request):
+        return RedirectResponse("/inventario", status_code=303)
+
     etapas = [
         ("0", "Esqueleto y despliegue", "listo"),
-        ("1", "Modelo de datos y aislamiento por empresa", "actual"),
-        ("2", "Registro de cuenta y onboarding", "pendiente"),
-        ("3", "Productos, atributos y variantes", "pendiente"),
+        ("1", "Modelo de datos y aislamiento por empresa", "listo"),
+        ("2", "Registro de cuenta y onboarding", "listo"),
+        ("3", "Productos, atributos y variantes", "actual"),
         ("4", "Motor de movimientos", "pendiente"),
         ("5", "Dashboard y alertas", "pendiente"),
         ("6", "Reportes, filtros y exportaciones", "pendiente"),
@@ -111,7 +106,6 @@ def inicio(request: Request):
         context={
             "version": app.version,
             "python": sys.version.split()[0],
-            "base_de_datos": estado_base_de_datos(),
             "hora": datetime.now(ZONA).strftime("%d/%m/%Y %H:%M"),
             "configuracion": estado_configuracion(),
             "base_de_datos": estado_base_de_datos(),
