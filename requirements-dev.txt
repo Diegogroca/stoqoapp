@@ -1,0 +1,5 @@
+# Dependencias solo para desarrollo local y CI. Vercel no las instala.
+-r requirements.txt
+uvicorn==0.35.0
+pytest==8.3.4
+httpx==0.28.1
