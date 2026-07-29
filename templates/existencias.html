@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block titulo %}Existencias &middot; {{ producto.nombre }}{% endblock %}
+
+{% block estilos %}
+<style>
+  .fila-variante input[type="number"] { width: 90px; text-align: right; }
+  .barra-fija {
+    position: sticky;
+    bottom: 0;
+    background: var(--pagina);
+    padding: 14px 0;
+    border-top: 1px solid var(--borde);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .total-vivo { font-family: var(--dato); font-size: 13px; color: var(--tinta-70); }
+  .total-vivo strong { color: var(--acento); font-size: 16px; }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<p class="eyebrow">{{ producto.nombre }}</p>
+<h1>Captura las existencias.</h1>
+<p class="entrada">
+  Escribe cuantas unidades tienes de cada variante. Deja en blanco o en cero las
+  que no tengas. Cada cantidad se registra como un movimiento de entrada, asi que
+  queda en el historial desde el primer dia.
+</p>
+
+{% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/productos/{{ producto.id }}/existencias">
+  <div class="panel">
+    <div class="campo" style="max-width:420px">
+      <label for="motivo">Motivo del registro</label>
+      <input type="text" id="motivo" name="motivo" value="Inventario inicial">
+      <p class="ayuda">Aparecera en el historial de cada movimiento.</p>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Variante</th>
+          <th>SKU</th>
+          <th class="num">Stock actual</th>
+          <th class="num">Agregar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fila in filas %}
+        <tr class="fila-variante">
+          <td>{{ fila.descripcion }}</td>
+          <td class="sku">{{ fila.variante.sku }}</td>
+          <td class="num">{{ fila.variante.stock }}</td>
+          <td class="num">
+            <input type="number" min="0" step="1" placeholder="0"
+                   class="cantidad"
+                   name="cantidad_{{ fila.variante.id }}">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="barra-fija">
+    <button type="submit" class="principal">Guardar existencias</button>
+    <span class="total-vivo">Unidades a registrar: <strong id="total">0</strong></span>
+    <a href="/inventario" style="font-size:14px">Hacerlo despues</a>
+  </div>
+</form>
+
+<script>
+  // Suma en vivo lo capturado. Solo informa: el servidor recalcula todo.
+  const entradas = document.querySelectorAll(".cantidad");
+  const total = document.getElementById("total");
+
+  function sumar() {
+    let suma = 0;
+    entradas.forEach((campo) => {
+      const valor = parseInt(campo.value, 10);
+      if (!isNaN(valor) && valor > 0) suma += valor;
+    });
+    total.textContent = suma;
+  }
+
+  entradas.forEach((campo) => campo.addEventListener("input", sumar));
+</script>
+{% endblock %}
