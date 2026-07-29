@@ -4,8 +4,9 @@ Stoqo - Plataforma multiempresa de control de inventario.
 Punto de entrada de la aplicacion. Vercel busca una instancia de FastAPI
 llamada `app` en este archivo y despliega todo como una sola funcion.
 
-Etapa 0: esqueleto verificable. Todavia no hay base de datos ni inventario;
-lo unico que esta ruta demuestra es que el despliegue funciona de punta a punta.
+Etapa 1: al esqueleto de la Etapa 0 se suma el modelo de datos. La pantalla de
+estado ahora reporta si la conexion con la base de datos responde, para poder
+verificar la configuracion sin abrir Supabase.
 """
 
 import os
@@ -52,6 +53,23 @@ def estado_configuracion() -> dict:
     }
 
 
+def estado_base_de_datos() -> dict:
+    """
+    Comprueba la conexion con Postgres sin tumbar la aplicacion si falla.
+
+    Se importa db aqui dentro y no arriba: si la base de datos no esta
+    configurada, la pantalla de estado debe seguir cargando para poder
+    diagnosticar el problema.
+    """
+    try:
+        from db import base_de_datos_responde
+
+        responde, detalle = base_de_datos_responde()
+    except Exception as error:  # noqa: BLE001
+        responde, detalle = False, type(error).__name__
+    return {"responde": responde, "detalle": detalle}
+
+
 @app.get("/health")
 def health() -> JSONResponse:
     """Verificacion tecnica del despliegue. Devuelve datos, no HTML."""
@@ -60,8 +78,9 @@ def health() -> JSONResponse:
         {
             "aplicacion": "Stoqo",
             "version": app.version,
-            "etapa": "0 - esqueleto y despliegue",
+            "etapa": "1 - modelo de datos y aislamiento por empresa",
             "python": sys.version.split()[0],
+            "base_de_datos": estado_base_de_datos(),
             "hora_servidor": datetime.now(ZONA).isoformat(timespec="seconds"),
             "configuracion_pendiente": [
                 nombre
@@ -76,8 +95,8 @@ def health() -> JSONResponse:
 def inicio(request: Request):
     """Pantalla de estado del proyecto: que ya funciona y que sigue."""
     etapas = [
-        ("0", "Esqueleto y despliegue", "actual"),
-        ("1", "Modelo de datos y aislamiento por empresa", "pendiente"),
+        ("0", "Esqueleto y despliegue", "listo"),
+        ("1", "Modelo de datos y aislamiento por empresa", "actual"),
         ("2", "Registro de cuenta y onboarding", "pendiente"),
         ("3", "Productos, atributos y variantes", "pendiente"),
         ("4", "Motor de movimientos", "pendiente"),
@@ -92,8 +111,10 @@ def inicio(request: Request):
         context={
             "version": app.version,
             "python": sys.version.split()[0],
+            "base_de_datos": estado_base_de_datos(),
             "hora": datetime.now(ZONA).strftime("%d/%m/%Y %H:%M"),
             "configuracion": estado_configuracion(),
+            "base_de_datos": estado_base_de_datos(),
             "etapas": etapas,
         },
     )

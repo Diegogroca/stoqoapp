@@ -56,12 +56,12 @@
 {% endblock %}
 
 {% block contenido %}
-<p class="eyebrow">Fase de codigo &middot; etapa 0 de 8</p>
-<h1>El despliegue funciona.<br>Ahora se construye el inventario.</h1>
+<p class="eyebrow">Fase de codigo &middot; etapa 1 de 8</p>
+<h1>El inventario ya tiene<br>estructura y limites.</h1>
 <p class="entrada">
-  Esta pantalla existe para comprobar una sola cosa antes de escribir logica de
-  negocio: que la aplicacion de Python corre publicamente en Vercel y responde.
-  Cada etapa siguiente agrega funcionalidad sobre una base ya verificada.
+  El modelo de datos esta definido y cada empresa queda aislada de las demas por
+  la propia base de datos, no solo por el codigo. Sobre esta base se construyen
+  los productos, los movimientos y los reportes.
 </p>
 
 <div class="panel">
@@ -94,6 +94,16 @@
       <div><dt>Version de Stoqo</dt><dd>{{ version }}</dd></div>
       <div><dt>Python</dt><dd>{{ python }}</dd></div>
       <div><dt>Hora del servidor</dt><dd>{{ hora }}</dd></div>
+      <div>
+        <dt>Base de datos</dt>
+        <dd>
+          {% if base_de_datos.responde %}
+            <span class="marca-estado ok">Conectada</span>
+          {% else %}
+            <span class="marca-estado espera">{{ base_de_datos.detalle }}</span>
+          {% endif %}
+        </dd>
+      </div>
       <div><dt>Verificacion tecnica</dt><dd><a href="/health">/health</a></dd></div>
     </dl>
   </div>
@@ -130,6 +140,10 @@
       <span class="nombre">{{ nombre }}</span>
       {% if estado == "actual" %}
         <span class="marca-estado ok">En curso</span>
+      {% elif estado == "listo" %}
+        <span class="marca-estado ok">Listo</span>
+      {% else %}
+        <span></span>
       {% endif %}
     </li>
     {% endfor %}
