@@ -323,3 +323,84 @@ def descripcion_variante(sesion: Session, variante: Variante) -> str:
         .where(VarianteValor.variante_id == variante.id)
     ).all()
     return " / ".join(valores) if valores else "Producto simple"
+
+
+# ---------------------------------------------------------------------------
+# Edicion y retiro
+# ---------------------------------------------------------------------------
+
+
+def actualizar_producto(
+    sesion: Session,
+    producto: Producto,
+    *,
+    nombre: str,
+    categoria: str | None = None,
+    unidad: str = "pieza",
+    costo: float = 0,
+    minimo: int = 0,
+) -> Producto:
+    """
+    Edita los datos comerciales de un producto.
+
+    Lo que SI se puede cambiar: nombre, categoria, unidad, costo y minimo.
+
+    Lo que NO se puede cambiar: los atributos y sus valores. Cambiar "Talla" por
+    "Medida" o quitar un color obligaria a decidir que hacer con las variantes
+    existentes y con los movimientos que las referencian. Renombrar en cascada
+    reescribiria el historial; borrar variantes dejaria movimientos huerfanos.
+    Ambas cosas contradicen la trazabilidad, asi que para cambiar la estructura
+    se crea un producto nuevo y se retira el anterior.
+    """
+    nombre = nombre.strip()
+    if not nombre:
+        raise ValueError("El nombre del producto es obligatorio.")
+    if costo < 0:
+        raise ValueError("El costo no puede ser negativo.")
+    if minimo < 0:
+        raise ValueError("El minimo de reposicion no puede ser negativo.")
+
+    producto.nombre = nombre
+    producto.unidad = (unidad or "pieza").strip() or "pieza"
+    producto.costo = costo
+    producto.minimo = minimo
+
+    if categoria and categoria.strip():
+        producto.categoria_id = _obtener_o_crear_categoria(
+            sesion, producto.empresa_id, categoria.strip()
+        )
+    else:
+        producto.categoria_id = None
+
+    sesion.commit()
+    return producto
+
+
+def retirar_producto(sesion: Session, producto: Producto) -> Producto:
+    """
+    Retira un producto del catalogo SIN borrar su historial (CE-18).
+
+    Es un borrado logico: el producto y sus variantes quedan inactivos, pero las
+    filas siguen existiendo. Por eso los movimientos pasados conservan su SKU,
+    su nombre y sus cifras, y un reporte de hace tres meses sigue siendo
+    interpretable. Un DELETE real romperia esa lectura o, peor, seria rechazado
+    por las llaves foraneas de los movimientos.
+    """
+    producto.activo = False
+    for variante in sesion.scalars(
+        select(Variante).where(Variante.producto_id == producto.id)
+    ).all():
+        variante.activa = False
+    sesion.commit()
+    return producto
+
+
+def reactivar_producto(sesion: Session, producto: Producto) -> Producto:
+    """Vuelve a poner en el catalogo un producto retirado por error."""
+    producto.activo = True
+    for variante in sesion.scalars(
+        select(Variante).where(Variante.producto_id == producto.id)
+    ).all():
+        variante.activa = True
+    sesion.commit()
+    return producto
