@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block titulo %}Reportes &middot; {{ empresa.nombre }}{% endblock %}
+
+{% block estilos %}
+<style>
+  .pestanas { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .pestanas a {
+    font-size: 13px;
+    text-decoration: none;
+    padding: 7px 13px;
+    border: 1px solid var(--borde);
+    border-radius: 999px;
+    color: var(--tinta-70);
+    background: var(--superficie);
+  }
+  .pestanas a.activa {
+    background: var(--tinta);
+    border-color: var(--tinta);
+    color: #fff;
+  }
+  .filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end; }
+  .filtros .campo { margin-bottom: 0; }
+  .descargas { display: flex; gap: 10px; flex-wrap: wrap; }
+  .descargas a {
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--acento);
+    color: var(--acento);
+  }
+  .descargas a:hover { background: var(--acento-sup); }
+  .tabla-ancha { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tabla-ancha table { min-width: 640px; }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<p class="eyebrow">{{ empresa.nombre }}</p>
+<h1 style="margin-bottom:22px">Reportes</h1>
+
+<div class="pestanas">
+  {% for clave_reporte, titulo in reportes_disponibles.items() %}
+  <a href="/reportes?reporte={{ clave_reporte }}"
+     class="{% if clave == clave_reporte %}activa{% endif %}">{{ titulo }}</a>
+  {% endfor %}
+</div>
+
+<div class="panel">
+  <form method="get" action="/reportes">
+    <input type="hidden" name="reporte" value="{{ clave }}">
+    <div class="filtros">
+      <div class="campo">
+        <label for="desde">Desde</label>
+        <input type="date" id="desde" name="desde"
+               value="{{ filtros.desde.isoformat() if filtros.desde else '' }}">
+      </div>
+      <div class="campo">
+        <label for="hasta">Hasta</label>
+        <input type="date" id="hasta" name="hasta"
+               value="{{ filtros.hasta.isoformat() if filtros.hasta else '' }}">
+      </div>
+      <div class="campo">
+        <label for="categoria">Categoria</label>
+        <select id="categoria" name="categoria">
+          <option value="">Todas</option>
+          {% for nombre in categorias %}
+          <option value="{{ nombre }}" {% if filtros.categoria == nombre %}selected{% endif %}>{{ nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="producto">Producto</label>
+        <select id="producto" name="producto">
+          <option value="">Todos</option>
+          {% for id_producto, nombre in productos %}
+          <option value="{{ id_producto }}"
+            {% if filtros.producto_id and filtros.producto_id|string == id_producto|string %}selected{% endif %}>{{ nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="estado">Estado del stock</label>
+        <select id="estado" name="estado">
+          <option value="">Todos</option>
+          <option value="disponible" {% if filtros.estado == 'disponible' %}selected{% endif %}>Disponible</option>
+          <option value="bajo" {% if filtros.estado == 'bajo' %}selected{% endif %}>Stock bajo</option>
+          <option value="agotado" {% if filtros.estado == 'agotado' %}selected{% endif %}>Agotado</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="tipo">Tipo de movimiento</label>
+        <select id="tipo" name="tipo">
+          <option value="">Todos</option>
+          {% for clave_tipo, etiqueta in tipos.items() %}
+          <option value="{{ clave_tipo }}" {% if filtros.tipo == clave_tipo %}selected{% endif %}>{{ etiqueta }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" name="incidencias" value="1" style="width:auto"
+                 {% if filtros.solo_incidencias %}checked{% endif %}>
+          Solo incidencias
+        </label>
+      </div>
+      <div class="campo">
+        <button type="submit" class="principal" style="width:100%">Aplicar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <div class="encabezado-seccion">
+    <div>
+      <h2 style="margin-bottom:4px">{{ reporte.titulo }}</h2>
+      <p class="sku" style="margin:0">
+        {{ reporte.filas|length }} registros &middot; filtros: {{ filtros.descripcion() }}
+      </p>
+    </div>
+    <div class="descargas">
+      <a href="/reportes/{{ clave }}.xlsx{% if parametros %}?{{ parametros }}{% endif %}">Excel</a>
+      <a href="/reportes/{{ clave }}.pdf{% if parametros %}?{{ parametros }}{% endif %}">PDF</a>
+    </div>
+  </div>
+
+  {% if reporte.vacio %}
+    <p class="ayuda">
+      Sin resultados para los filtros aplicados. Ajusta el periodo o quita algun
+      filtro; los archivos descargados tambien saldran vacios, no con error.
+    </p>
+  {% else %}
+  <div class="tabla-ancha">
+    <table>
+      <thead>
+        <tr>
+          {% for columna in reporte.columnas %}
+          <th class="{% if loop.index0 in reporte.alineadas_derecha %}num{% endif %}">{{ columna }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for fila in reporte.filas %}
+        <tr>
+          {% for valor in fila %}
+          <td class="{% if loop.index0 in reporte.alineadas_derecha %}num{% endif %}">
+            {% if valor is number and valor is not integer %}{{ "{:,.2f}".format(valor) }}{% else %}{{ valor }}{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if reporte.nota %}
+    <p class="ayuda" style="margin-top:14px">{{ reporte.nota }}</p>
+  {% endif %}
+</div>
+
+<p class="ayuda">
+  La pantalla y los archivos se generan con la misma consulta y los mismos
+  filtros: por construccion no pueden mostrar subconjuntos distintos.
+</p>
+{% endblock %}
