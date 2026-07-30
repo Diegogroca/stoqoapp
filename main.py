@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from dependencias import SesionRequerida, identidad
-from rutas import cuentas, inventario, movimientos
+from rutas import cuentas, inventario, movimientos, reportes
 from vistas import templates
 
 ZONA = ZoneInfo("America/Mexico_City")
@@ -26,12 +26,13 @@ ZONA = ZoneInfo("America/Mexico_City")
 app = FastAPI(
     title="Stoqo",
     description="MVP multiempresa de control de inventario",
-    version="0.5.0",
+    version="1.0.0",
 )
 
 app.include_router(cuentas.router)
 app.include_router(inventario.router)
 app.include_router(movimientos.router)
+app.include_router(reportes.router)
 
 
 @app.exception_handler(Exception)
@@ -94,7 +95,7 @@ def health() -> JSONResponse:
         {
             "aplicacion": "Stoqo",
             "version": app.version,
-            "etapa": "5 - dashboard y alertas",
+            "etapa": "8 - pruebas y demostracion",
             "python": sys.version.split()[0],
             "base_de_datos": estado_base_de_datos(),
             "hora_servidor": datetime.now(ZONA).isoformat(timespec="seconds"),
@@ -119,10 +120,10 @@ def inicio(request: Request):
         ("2", "Registro de cuenta y onboarding", "listo"),
         ("3", "Productos, atributos y variantes", "listo"),
         ("4", "Motor de movimientos", "listo"),
-        ("5", "Dashboard y alertas", "actual"),
-        ("6", "Reportes, filtros y exportaciones", "pendiente"),
-        ("7", "Calidad de interfaz", "pendiente"),
-        ("8", "Pruebas y demostracion", "pendiente"),
+        ("5", "Dashboard y alertas", "listo"),
+        ("6", "Reportes, filtros y exportaciones", "listo"),
+        ("7", "Calidad de interfaz", "listo"),
+        ("8", "Pruebas y demostracion", "actual"),
     ]
     return templates.TemplateResponse(
         request=request,
