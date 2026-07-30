@@ -201,3 +201,81 @@ def cargar_existencias(
         )
     sesion.commit()
     return movimientos
+
+
+# ---------------------------------------------------------------------------
+# Cancelacion y compensacion (Pseudocodigo C)
+# ---------------------------------------------------------------------------
+
+TIPO_OPUESTO = {
+    "entrada": "salida",
+    "salida": "entrada",
+    "ajuste_positivo": "ajuste_negativo",
+    "ajuste_negativo": "ajuste_positivo",
+}
+
+
+class MovimientoNoCancelable(Exception):
+    """El movimiento no existe, ya fue cancelado, o es una compensacion."""
+
+
+def cancelar_movimiento(
+    sesion: Session,
+    empresa_id: uuid.UUID,
+    movimiento_id: uuid.UUID,
+    motivo: str,
+    *,
+    confirmar_negativo: bool = False,
+) -> Movimiento:
+    """
+    Corrige un movimiento sin borrarlo (Pseudocodigo C de la planeacion).
+
+    Por que no se edita ni se borra el original: un historial que se puede
+    reescribir no explica nada. Si un error se corrige borrando la fila, el stock
+    cuadra pero nadie puede saber que paso ni cuando. Aqui el original se marca
+    como cancelado y se crea un movimiento NUEVO con el delta contrario, enlazado
+    al primero. El historial conserva las tres cosas: el error, la cancelacion y
+    la operacion que restauro el inventario.
+
+    Reglas que se hacen cumplir:
+    - Solo movimientos de la propia empresa.
+    - Un movimiento ya cancelado no se puede cancelar otra vez.
+    - Una compensacion no se puede cancelar (seria una cadena infinita).
+    """
+    if not motivo or not motivo.strip():
+        raise MotivoRequerido("Cancelar un movimiento exige un motivo.")
+
+    original = sesion.scalars(
+        select(Movimiento).where(
+            Movimiento.id == movimiento_id, Movimiento.empresa_id == empresa_id
+        )
+    ).first()
+
+    if original is None:
+        raise MovimientoNoCancelable("El movimiento no existe en esta empresa.")
+    if original.cancelado:
+        # Caso limite de la planeacion: bloquear una segunda cancelacion.
+        raise MovimientoNoCancelable("Este movimiento ya fue cancelado.")
+    if original.compensa_a is not None:
+        raise MovimientoNoCancelable(
+            "Una compensacion no se cancela. Cancela el movimiento original."
+        )
+
+    # El delta contrario se logra registrando el tipo opuesto con la misma
+    # cantidad, en lugar de inventar un delta a mano. Asi la compensacion pasa
+    # por las mismas validaciones que cualquier otro movimiento.
+    compensacion = registrar_movimiento(
+        sesion,
+        empresa_id,
+        original.variante_id,
+        TIPO_OPUESTO[original.tipo],
+        original.cantidad,
+        motivo=f"Cancelacion: {motivo.strip()}",
+        confirmar_negativo=confirmar_negativo,
+        compensa_a=original.id,
+        confirmar=False,
+    )
+
+    original.cancelado = True
+    sesion.commit()
+    return compensacion
