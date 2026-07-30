@@ -396,3 +396,110 @@ def _id_producto(html: str) -> str:
     import re
 
     return re.search(r'action="/productos/([0-9a-f-]+)/existencias"', html).group(1)
+
+
+# ---------------------------------------------------------------------------
+# CE-18: editar y retirar
+# ---------------------------------------------------------------------------
+
+
+def test_se_puede_editar_nombre_costo_y_minimo(cliente: TestClient):
+    respuesta = crear_polo_por_http(cliente)
+    id_producto = _id_producto(respuesta.text)
+
+    cliente.post(
+        f"/productos/{id_producto}/editar",
+        data={
+            "nombre": "Polo Premium 2026",
+            "categoria": "Playeras",
+            "unidad": "pieza",
+            "costo": 320,
+            "minimo": 15,
+        },
+        follow_redirects=True,
+    )
+    catalogo = cliente.get("/inventario").text
+    assert "Polo Premium 2026" in catalogo
+    assert ">15<" in catalogo
+
+
+def test_un_costo_negativo_al_editar_se_rechaza(cliente: TestClient):
+    respuesta = crear_polo_por_http(cliente)
+    id_producto = _id_producto(respuesta.text)
+
+    fallo = cliente.post(
+        f"/productos/{id_producto}/editar",
+        data={
+            "nombre": "Polo",
+            "categoria": "",
+            "unidad": "pieza",
+            "costo": -1,
+            "minimo": 0,
+        },
+    )
+    assert fallo.status_code == 400
+    assert "no puede ser negativo" in fallo.text
+
+
+def test_ce18_retirar_saca_del_catalogo_y_conserva_el_historial(cliente: TestClient):
+    respuesta = crear_polo_por_http(cliente)
+    id_producto = _id_producto(respuesta.text)
+    ids = campos_de_cantidad(respuesta.text)
+
+    # Se carga inventario para que exista historial que conservar.
+    cliente.post(
+        f"/productos/{id_producto}/existencias",
+        data={f"cantidad_{ids[0]}": "5"},
+        follow_redirects=True,
+    )
+    cliente.post(f"/productos/{id_producto}/retirar", follow_redirects=True)
+
+    # Fuera del catalogo...
+    assert "Polo Premium" not in cliente.get("/inventario").text
+    # ...pero visible en los retirados, con su SKU intacto.
+    retirados = cliente.get("/inventario?retirados=1").text
+    assert "Polo Premium" in retirados
+    assert "POL-0001" in retirados
+
+
+def test_un_producto_retirado_se_puede_reactivar(cliente: TestClient):
+    respuesta = crear_polo_por_http(cliente)
+    id_producto = _id_producto(respuesta.text)
+
+    cliente.post(f"/productos/{id_producto}/retirar", follow_redirects=True)
+    cliente.post(f"/productos/{id_producto}/reactivar", follow_redirects=True)
+
+    assert "Polo Premium" in cliente.get("/inventario").text
+
+
+def test_no_se_puede_editar_un_producto_de_otra_empresa(cliente: TestClient):
+    respuesta = crear_polo_por_http(cliente)
+    id_producto = _id_producto(respuesta.text)
+    cliente.post("/salir")
+
+    cliente.post(
+        "/registro",
+        data={
+            "empresa": "Panaderia",
+            "correo": "dueno@pan.com",
+            "password": "clave_seguraPAN",
+        },
+        follow_redirects=True,
+    )
+    ajena = cliente.get(f"/productos/{id_producto}/editar", follow_redirects=False)
+    assert ajena.status_code == 303
+
+
+def test_la_pantalla_de_edicion_carga(cliente: TestClient):
+    """Cubre el render completo: es donde estaba el error de sintaxis."""
+    respuesta = crear_polo_por_http(cliente)
+    id_producto = _id_producto(respuesta.text)
+    pantalla = cliente.get(f"/productos/{id_producto}/editar")
+    assert pantalla.status_code == 200
+    assert "Retirar del catalogo" in pantalla.text
+
+
+def test_el_catalogo_de_retirados_renderiza(cliente: TestClient):
+    """La rama del catalogo que tenia el {% elif %} invalido."""
+    crear_polo_por_http(cliente)
+    assert cliente.get("/inventario?retirados=1").status_code == 200
