@@ -251,17 +251,18 @@ def test_ce10_cancelar_compensa_restaura_y_no_se_repite(cliente):
         data={"motivo": "Se registro dos veces"},
         follow_redirects=True,
     )
-    final = cliente.get("/historial").text
-    assert "cancelado" in final
-    assert "compensacion" in final
+    # El original y su compensacion quedan registrados en la vista de auditoria.
+    auditoria = cliente.get("/historial?vista=auditoria").text
+    assert "cancelado" in auditoria
+    assert "compensacion" in auditoria
     assert ">20<" in cliente.get("/inventario").text  # stock restaurado
 
-    # La segunda cancelacion se bloquea.
+    # La segunda reversion se bloquea.
     segunda = cliente.post(
         f"/movimientos/{id_movimiento}/cancelar", data={"motivo": "Otra vez"}
     )
     assert segunda.status_code == 400
-    assert "ya fue cancelado" in segunda.text
+    assert "ya fue revertido" in segunda.text
 
 
 # ---------------------------------------------------------------------------

@@ -419,18 +419,75 @@ def test_ce10_cancelar_desde_el_historial(cliente: TestClient):
         follow_redirects=True,
     )
     historial = cliente.get("/historial").text
-    ids = re.findall(r'action="/movimientos/([0-9a-f-]+)/cancelar"', historial)
+    ids = re.findall(r'/movimientos/([0-9a-f-]+)/cancelar', historial)
     assert ids
+
+    # La pantalla dedicada explica el efecto antes de confirmar.
+    confirmacion = cliente.get(f"/movimientos/{ids[0]}/cancelar")
+    assert confirmacion.status_code == 200
+    assert "Revertir este movimiento" in confirmacion.text
 
     cliente.post(
         f"/movimientos/{ids[0]}/cancelar",
         data={"motivo": "Se registro dos veces"},
         follow_redirects=True,
     )
-    final = cliente.get("/historial").text
-    assert "cancelado" in final
-    assert "compensacion" in final
     assert ">10<" in cliente.get("/inventario").text  # stock restaurado
+
+
+def test_la_vista_operativa_oculta_las_correcciones(cliente: TestClient):
+    """
+    Dos audiencias, dos vistas.
+
+    El dueño quiere ver mercancia que se movio; el contador quiere ver todo,
+    incluidos los errores. Ningun dato se pierde: cambia lo que se muestra por
+    omision.
+    """
+    import re
+
+    id_variante = preparar_gorra(cliente)
+    cliente.post(
+        f"/variantes/{id_variante}/movimiento",
+        data={"tipo": "salida", "cantidad": "4", "motivo": "Venta"},
+        follow_redirects=True,
+    )
+    ids = re.findall(r'/movimientos/([0-9a-f-]+)/cancelar', cliente.get("/historial").text)
+    cliente.post(
+        f"/movimientos/{ids[0]}/cancelar",
+        data={"motivo": "Error de captura"},
+        follow_redirects=True,
+    )
+
+    operativo = cliente.get("/historial").text
+    auditoria = cliente.get("/historial?vista=auditoria").text
+
+    # La salida revertida y su correccion no ensucian la vista operativa.
+    assert "revertido" not in operativo.lower()
+    assert "Error de captura" not in operativo
+    # Pero siguen ahi, intactas, en auditoria.
+    assert "Error de captura" in auditoria
+    assert "cancelado" in auditoria
+    assert "compensacion" in auditoria
+
+
+def test_no_se_puede_revertir_dos_veces_desde_la_pantalla(cliente: TestClient):
+    import re
+
+    id_variante = preparar_gorra(cliente)
+    cliente.post(
+        f"/variantes/{id_variante}/movimiento",
+        data={"tipo": "salida", "cantidad": "4", "motivo": "Venta"},
+        follow_redirects=True,
+    )
+    ids = re.findall(r'/movimientos/([0-9a-f-]+)/cancelar', cliente.get("/historial").text)
+    cliente.post(
+        f"/movimientos/{ids[0]}/cancelar", data={"motivo": "Primera"}, follow_redirects=True
+    )
+
+    # La pantalla ya no ofrece el formulario y explica por que.
+    pantalla = cliente.get(f"/movimientos/{ids[0]}/cancelar")
+    assert "ya fue revertido" in pantalla.text
+    assert 'name="motivo"' not in pantalla.text  # no hay formulario que enviar
 
 
 def test_el_historial_exige_sesion(cliente: TestClient):
@@ -455,3 +512,141 @@ def test_no_se_puede_mover_una_variante_ajena(cliente: TestClient):
     )
     ajena = cliente.get(f"/variantes/{id_variante}/movimiento", follow_redirects=False)
     assert ajena.status_code == 303
+
+
+# ---------------------------------------------------------------------------
+# Graficas del panel
+# ---------------------------------------------------------------------------
+
+
+def test_el_panel_agrupa_el_inventario_por_atributo(sesion: Session, inventario):
+    """
+    Con muchas variantes el catalogo es ilegible; agregado por atributo responde
+    preguntas concretas: de que talla hay mas inventario.
+    """
+    from servicios.indicadores import stock_por_atributo
+
+    empresa, _, polo = inventario
+    variantes = sesion.scalars(
+        select(Variante).where(Variante.producto_id == polo.id).order_by(Variante.sku)
+    ).all()
+    registrar_movimiento(sesion, empresa.id, variantes[0].id, "entrada", 7)
+    registrar_movimiento(sesion, empresa.id, variantes[1].id, "entrada", 3)
+
+    agrupado = stock_por_atributo(sesion, empresa.id)
+
+    assert "Talla" in agrupado
+    unidades = {fila["valor"]: fila["unidades"] for fila in agrupado["Talla"]}
+    assert unidades == {"M": 7, "L": 3}
+    # Ordenado de mayor a menor: la primera fila es la talla con mas stock.
+    assert agrupado["Talla"][0]["valor"] == "M"
+
+
+def test_el_flujo_diario_rellena_los_dias_sin_movimiento(sesion: Session, inventario):
+    """
+    Una grafica con huecos miente sobre el ritmo del negocio: un dia sin ventas
+    debe aparecer como valle, no desaparecer del eje.
+    """
+    from servicios.indicadores import flujo_diario
+
+    empresa, gorra, _ = inventario
+    variante = variante_de(sesion, gorra)
+    registrar_movimiento(sesion, empresa.id, variante.id, "salida", 4)
+
+    serie = flujo_diario(sesion, empresa.id, dias=14)
+
+    assert len(serie) == 14  # catorce dias, aunque solo uno tenga datos
+    assert serie[-1]["salidas"] == 4  # hoy es el ultimo
+    assert all("etiqueta" in dia for dia in serie)
+    assert sum(dia["salidas"] for dia in serie) == 4
+
+
+def test_la_concentracion_del_valor_ordena_y_acumula(sesion: Session, inventario):
+    """Analisis ABC: pocos productos concentran la mayor parte del capital."""
+    from servicios.indicadores import concentracion_del_valor
+
+    empresa, _, polo = inventario
+    variante = variante_de(sesion, polo)
+    registrar_movimiento(sesion, empresa.id, variante.id, "entrada", 40)
+
+    serie = concentracion_del_valor(sesion, empresa.id)
+
+    # Polo: 40 x $250 = $10,000. Gorra: 20 x $100 = $2,000. Total $12,000.
+    assert serie[0]["nombre"] == "Polo Premium"
+    assert serie[0]["valor"] == 10000.0
+    assert serie[0]["porcentaje"] == pytest.approx(83.3, abs=0.1)
+    assert serie[-1]["acumulado"] == pytest.approx(100.0, abs=0.1)
+
+
+def test_sin_inventario_las_series_no_truenan(sesion: Session):
+    """Empresa recien creada: las graficas deben quedar vacias, no fallar."""
+    from servicios.indicadores import (
+        concentracion_del_valor,
+        flujo_diario,
+        stock_por_atributo,
+    )
+
+    empresa, _ = registrar(sesion, "Vacia", "dueno@vacia.com", "clave_seguraVAC")
+
+    assert stock_por_atributo(sesion, empresa.id) == {}
+    assert concentracion_del_valor(sesion, empresa.id) == []
+    assert len(flujo_diario(sesion, empresa.id, dias=7)) == 7
+
+
+def test_el_panel_renderiza_las_tres_graficas(cliente: TestClient):
+    import re
+
+    id_variante = preparar_gorra(cliente)
+    cliente.post(
+        f"/variantes/{id_variante}/movimiento",
+        data={"tipo": "salida", "cantidad": "3", "motivo": "Venta"},
+        follow_redirects=True,
+    )
+    panel = cliente.get("/panel").text
+
+    assert "Inventario por atributo" not in panel  # la gorra es simple, sin atributos
+    assert "Movimiento de los ultimos 14 dias" in panel
+    assert "Donde esta detenido el dinero" in panel
+    assert "<svg" in panel  # la grafica de flujo se dibujo
+    assert re.search(r'<rect[^>]+fill="#B4541E"', panel)  # hay barra de salida
+
+
+def test_el_panel_muestra_el_selector_de_atributos_cuando_hay(cliente: TestClient):
+    cliente.post(
+        "/registro",
+        data={
+            "empresa": "KOVA",
+            "correo": "dueno@kova.com",
+            "password": "clave_seguraKOVA",
+        },
+        follow_redirects=True,
+    )
+    pantalla = cliente.post(
+        "/productos/nuevo",
+        data={
+            "nombre": "Polo",
+            "categoria": "Playeras",
+            "unidad": "pieza",
+            "costo": 250,
+            "minimo": 5,
+            "atributo_1": "Talla",
+            "valores_1": "S, M, L",
+            "atributo_2": "Color",
+            "valores_2": "negro, azul",
+        },
+        follow_redirects=True,
+    )
+    import re
+
+    ids = re.findall(r'name="cantidad_([0-9a-f-]+)"', pantalla.text)
+    id_producto = re.search(r"/productos/([0-9a-f-]+)/existencias", pantalla.text).group(1)
+    cliente.post(
+        f"/productos/{id_producto}/existencias",
+        data={f"cantidad_{ids[0]}": "5", f"cantidad_{ids[1]}": "9"},
+        follow_redirects=True,
+    )
+
+    panel = cliente.get("/panel").text
+    assert "Inventario por atributo" in panel
+    assert 'data-atributo="0"' in panel
+    assert "Talla" in panel and "Color" in panel
