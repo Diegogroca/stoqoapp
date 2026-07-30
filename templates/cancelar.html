@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block titulo %}Revertir movimiento &middot; Stoqo{% endblock %}
+
+{% block estilos %}
+<style>
+  .cadena { display: grid; gap: 10px; margin: 6px 0 4px; }
+  .eslabon {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 11px 14px;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  .eslabon .paso {
+    font-family: var(--dato);
+    font-size: 11px;
+    color: var(--tinta-45);
+    min-width: 16px;
+  }
+  .eslabon.futuro { border-style: dashed; background: var(--acento-sup); }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="estrecho">
+  <p class="eyebrow">{{ producto.nombre if producto else "" }} &middot; {{ descripcion }}</p>
+  <h1>Revertir este movimiento.</h1>
+
+  {% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <h2>El movimiento</h2>
+    <dl class="lista-dato">
+      <div><dt>Tipo</dt><dd>{{ etiqueta }}</dd></div>
+      <div><dt>Cantidad</dt><dd>{{ movimiento.cantidad }}</dd></div>
+      <div><dt>Fecha</dt><dd>{{ movimiento.registrado_en.strftime("%d/%m/%Y %H:%M") }}</dd></div>
+      <div><dt>SKU</dt><dd>{{ variante.sku if variante else "" }}</dd></div>
+      <div><dt>Motivo original</dt><dd>{{ movimiento.motivo or "sin motivo" }}</dd></div>
+      <div><dt>Stock actual</dt><dd>{{ variante.stock if variante else 0 }}</dd></div>
+    </dl>
+  </div>
+
+  {% if not cancelable %}
+    <div class="aviso-error">
+      {% if movimiento.cancelado %}
+        Este movimiento ya fue revertido. Un movimiento admite una sola
+        correccion, para que el stock no se ajuste dos veces por el mismo error.
+      {% else %}
+        Este movimiento es una compensacion, es decir, ya es la correccion de
+        otro. Para deshacerla habria que corregir la correccion, y eso abriria
+        una cadena sin fin. Registra un movimiento nuevo en su lugar.
+      {% endif %}
+    </div>
+    <a class="enlace-boton" href="/historial">Volver al historial</a>
+  {% else %}
+
+  <div class="panel">
+    <h2>Que va a pasar</h2>
+    <div class="cadena">
+      <div class="eslabon">
+        <span class="paso">1</span>
+        <span>
+          El movimiento original <strong>no se borra</strong>. Queda marcado como
+          revertido y visible en la vista de auditoria.
+        </span>
+      </div>
+      <div class="eslabon">
+        <span class="paso">2</span>
+        <span>
+          Se crea un movimiento nuevo con el efecto contrario, enlazado a este.
+        </span>
+      </div>
+      <div class="eslabon futuro">
+        <span class="paso">3</span>
+        <span>
+          El stock pasa de <strong>{{ variante.stock }}</strong> a
+          <strong>{{ stock_resultante }}</strong>.
+        </span>
+      </div>
+    </div>
+    <p class="ayuda" style="margin-top:12px">
+      Por que no se borra: si un error se corrigiera borrando la fila, el stock
+      cuadraria pero nadie podria saber que paso ni cuando. Guardar las tres
+      cosas &mdash;el error, la correccion y el resultado&mdash; es lo que permite
+      explicar cualquier cifra despues.
+      <br><br>
+      En la vista <strong>Operativo</strong> del historial ninguna de las dos
+      filas aparece, porque no representan mercancia que se movio. Solo se ven en
+      <strong>Auditoria</strong>.
+    </p>
+  </div>
+
+  <div class="panel">
+    <form method="post" action="/movimientos/{{ movimiento.id }}/cancelar">
+      <div class="campo">
+        <label for="motivo">Por que se revierte (obligatorio)</label>
+        <input type="text" id="motivo" name="motivo" required autofocus
+               placeholder="Se registro dos veces, error de captura...">
+        <p class="ayuda">Queda guardado en el movimiento de correccion.</p>
+      </div>
+
+      {% if permitir_negativo %}
+      <div class="campo">
+        <label style="display:flex;align-items:center;gap:9px;font-weight:500">
+          <input type="checkbox" name="confirmar_negativo" value="1" required
+                 style="width:auto">
+          Confirmo que el stock quede en {{ stock_resultante }}
+        </label>
+      </div>
+      {% endif %}
+
+      <button type="submit" class="principal" style="background:var(--alerta)">
+        Revertir movimiento
+      </button>
+      <a href="/historial" style="margin-left:14px;font-size:14px">No hacer nada</a>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

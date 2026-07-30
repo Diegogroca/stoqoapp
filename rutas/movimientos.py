@@ -27,7 +27,13 @@ from sqlalchemy.orm import Session
 from alcance import AlcanceEmpresa
 from dependencias import identidad, obtener_sesion, redirigir_a_entrada
 from modelos import SIGNO_POR_TIPO, Empresa, Movimiento, Producto, Variante
-from servicios.indicadores import entradas_y_salidas, resumen_completo
+from servicios.indicadores import (
+    concentracion_del_valor,
+    entradas_y_salidas,
+    flujo_diario,
+    resumen_completo,
+    stock_por_atributo,
+)
 from servicios.movimientos import (
     CantidadInvalida,
     MotivoRequerido,
@@ -175,6 +181,7 @@ def _filas_historial(
     hasta: date | None = None,
     pagina: int = 1,
     por_pagina: int = POR_PAGINA,
+    vista: str = "operativo",
 ) -> tuple[list[dict], dict]:
     """
     Historial con filtros y paginacion, mas reciente primero.
@@ -192,6 +199,23 @@ def _filas_historial(
         .where(Movimiento.empresa_id == empresa_id)
         .order_by(Movimiento.registrado_en.desc(), Movimiento.id)
     )
+
+    # Dos audiencias, dos vistas.
+    #
+    # "operativo" responde a la pregunta del dueño: que mercancia se movio de
+    # verdad. Oculta los movimientos cancelados y sus compensaciones, porque son
+    # correcciones administrativas y no entradas ni salidas reales.
+    #
+    # "auditoria" responde a la pregunta del contador: que ocurrio en el sistema,
+    # incluidos los errores y como se corrigieron.
+    #
+    # Ningun dato se pierde en ningun caso: la diferencia es que se muestra por
+    # omision. Mostrar el registro contable a quien solo queria el resumen es lo
+    # que hacia confusa la pantalla.
+    if vista != "auditoria":
+        consulta = consulta.where(
+            Movimiento.cancelado.is_(False), Movimiento.compensa_a.is_(None)
+        )
     if tipo in SIGNO_POR_TIPO:
         consulta = consulta.where(Movimiento.tipo == tipo)
     if solo_incidencias:
@@ -258,18 +282,22 @@ def _filas_historial(
         "por_pagina": por_pagina,
         "primero": desplazamiento + 1 if total else 0,
         "ultimo": min(desplazamiento + por_pagina, total),
+        "vista": vista,
     }
 
 
-def _contexto_historial(sesion: Session, empresa_id: uuid.UUID) -> dict:
+def _contexto_historial(
+    sesion: Session, empresa_id: uuid.UUID, vista: str = "operativo"
+) -> dict:
     """Contexto del historial sin filtros, para las respuestas de error."""
-    filas, paginacion = _filas_historial(sesion, empresa_id)
+    filas, paginacion = _filas_historial(sesion, empresa_id, vista=vista)
     return {
         "filas": filas,
         "paginacion": paginacion,
         "tipos": ETIQUETA_TIPO,
         "tipo_activo": "",
         "solo_incidencias": False,
+        "vista": vista,
         "flujo": entradas_y_salidas(sesion, empresa_id),
     }
 
@@ -280,6 +308,7 @@ def ver_historial(
     tipo: str = "",
     incidencias: int = 0,
     pagina: int = 1,
+    vista: str = "operativo",
     sesion: Session = Depends(obtener_sesion),
 ):
     datos = identidad(request)
@@ -293,6 +322,7 @@ def ver_historial(
         tipo=tipo,
         solo_incidencias=bool(incidencias),
         pagina=pagina,
+        vista=vista,
     )
     return templates.TemplateResponse(
         request=request,
@@ -301,10 +331,84 @@ def ver_historial(
             "empresa": empresa,
             "filas": filas,
             "paginacion": paginacion,
+            "vista": vista,
             "tipos": ETIQUETA_TIPO,
             "tipo_activo": tipo,
             "solo_incidencias": bool(incidencias),
             "flujo": entradas_y_salidas(sesion, datos["empresa"]),
+        },
+    )
+
+
+def _cancelacion_con_error(
+    request: Request,
+    sesion: Session,
+    movimiento_id: uuid.UUID,
+    mensaje: str,
+    *,
+    permitir_negativo: bool = False,
+):
+    """Vuelve a la pantalla de cancelacion mostrando que salio mal."""
+    respuesta = mostrar_cancelacion(movimiento_id, request, sesion)
+    if not hasattr(respuesta, "context"):
+        return respuesta
+    respuesta.context["error"] = mensaje
+    respuesta.context["permitir_negativo"] = permitir_negativo
+    respuesta.status_code = 400
+    return templates.TemplateResponse(
+        request=request, name="cancelar.html", context=respuesta.context, status_code=400
+    )
+
+
+@router.get("/movimientos/{movimiento_id}/cancelar", response_class=HTMLResponse)
+def mostrar_cancelacion(
+    movimiento_id: uuid.UUID,
+    request: Request,
+    sesion: Session = Depends(obtener_sesion),
+):
+    """
+    Pantalla dedicada para cancelar un movimiento.
+
+    Antes el formulario vivia dentro de una celda de la tabla del historial. Dos
+    problemas: el aviso del navegador por el campo obligatorio quedaba recortado
+    por el scroll horizontal de la tabla (parecia que el boton no hacia nada), y
+    el boton decia "Cancelar", que en cualquier interfaz significa "abortar" y no
+    "revertir este movimiento".
+
+    Una pantalla aparte permite ademas mostrar exactamente que va a pasar con el
+    stock antes de confirmar.
+    """
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    movimiento = sesion.scalars(
+        select(Movimiento).where(
+            Movimiento.id == movimiento_id,
+            Movimiento.empresa_id == datos["empresa"],
+        )
+    ).first()
+    if movimiento is None:
+        return RedirectResponse("/historial", status_code=303)
+
+    variante = sesion.get(Variante, movimiento.variante_id)
+    producto = sesion.get(Producto, variante.producto_id) if variante else None
+
+    return templates.TemplateResponse(
+        request=request,
+        name="cancelar.html",
+        context={
+            "movimiento": movimiento,
+            "variante": variante,
+            "producto": producto,
+            "descripcion": descripcion_variante(sesion, variante) if variante else "",
+            "etiqueta": ETIQUETA_TIPO.get(movimiento.tipo, movimiento.tipo),
+            # Lo que quedara despues de compensar: el stock actual menos el
+            # efecto del movimiento original.
+            "stock_resultante": variante.stock - movimiento.delta if variante else 0,
+            "cancelable": (
+                not movimiento.cancelado and movimiento.compensa_a is None
+            ),
         },
     )
 
@@ -330,32 +434,16 @@ def procesar_cancelacion(
             confirmar_negativo=bool(confirmar_negativo),
         )
     except (MovimientoNoCancelable, MotivoRequerido) as problema:
-        empresa = sesion.get(Empresa, datos["empresa"])
-        return templates.TemplateResponse(
-            request=request,
-            name="historial.html",
-            context={
-                "empresa": empresa,
-                **_contexto_historial(sesion, datos["empresa"]),
-                "error": str(problema),
-            },
-            status_code=400,
-        )
+        return _cancelacion_con_error(request, sesion, movimiento_id, str(problema))
     except StockNegativoRequiereConfirmacion as aviso:
-        empresa = sesion.get(Empresa, datos["empresa"])
-        return templates.TemplateResponse(
-            request=request,
-            name="historial.html",
-            context={
-                "empresa": empresa,
-                **_contexto_historial(sesion, datos["empresa"]),
-                "error": (
-                    f"Cancelar dejaria el stock en {aviso.stock_posterior}. "
-                    "Registra primero una entrada o confirma la incidencia desde "
-                    "la pantalla de movimiento."
-                ),
-            },
-            status_code=400,
+        return _cancelacion_con_error(
+            request,
+            sesion,
+            movimiento_id,
+            f"Revertir este movimiento dejaria el stock en {aviso.stock_posterior}. "
+            "Registra primero una entrada, o confirma la incidencia marcando la "
+            "casilla de abajo.",
+            permitir_negativo=True,
         )
 
     return RedirectResponse("/historial", status_code=303)
@@ -409,8 +497,25 @@ def ver_panel(request: Request, sesion: Session = Depends(obtener_sesion)):
             }
         )
 
+    # Series para las graficas. Se calculan aparte de los indicadores porque
+    # responden preguntas distintas: los indicadores dicen COMO ESTA el
+    # inventario, las graficas dicen COMO SE DISTRIBUYE y COMO SE MUEVE.
+    por_atributo = stock_por_atributo(sesion, datos["empresa"])
+    diario = flujo_diario(sesion, datos["empresa"])
+    concentracion = concentracion_del_valor(sesion, datos["empresa"])
+
     return templates.TemplateResponse(
         request=request,
         name="panel.html",
-        context={"empresa": empresa, "r": resumen, "recientes": recientes},
+        context={
+            "empresa": empresa,
+            "r": resumen,
+            "recientes": recientes,
+            "por_atributo": por_atributo,
+            "diario": diario,
+            "tope_diario": max(
+                [max(d["entradas"], d["salidas"]) for d in diario] or [0]
+            ),
+            "concentracion": concentracion,
+        },
     )
