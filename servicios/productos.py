@@ -27,7 +27,6 @@ from sqlalchemy.orm import Session
 from modelos import (
     Atributo,
     Categoria,
-    Movimiento,
     Producto,
     ValorAtributo,
     Variante,
@@ -315,14 +314,59 @@ def _registrar_inventario_inicial(sesion: Session, variante: Variante, cantidad:
     )
 
 
-def descripcion_variante(sesion: Session, variante: Variante) -> str:
-    """Texto legible de una variante: 'M / negro', o su SKU si es simple."""
-    valores = sesion.scalars(
-        select(ValorAtributo.valor)
-        .join(VarianteValor, VarianteValor.valor_atributo_id == ValorAtributo.id)
-        .where(VarianteValor.variante_id == variante.id)
+def descripciones_de(
+    sesion: Session, variantes_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """
+    Descripcion legible de MUCHAS variantes en UNA sola consulta.
+
+    Existe para resolver un problema N+1 real. La version anterior consultaba una
+    variante a la vez, asi que pintar el catalogo de un producto con 49 variantes
+    lanzaba 49 consultas mas una por producto. Con esta funcion son 2 consultas
+    para todo el catalogo, sin importar cuantas variantes haya.
+
+    Por que importa mas aqui que en un servidor tradicional: cada consulta desde
+    una funcion serverless cruza la red hasta el pooler de Supabase. 49 viajes de
+    ida y vuelta no son 49 veces mas lentos que uno, son peor, porque la latencia
+    domina sobre el tiempo de calculo.
+
+    Se traen las parejas (variante, valor) y se agrupan en Python en lugar de usar
+    string_agg o group_concat, porque esas funciones se escriben distinto en
+    Postgres y en SQLite y las pruebas corren sobre SQLite.
+    """
+    if not variantes_ids:
+        return {}
+
+    filas = sesion.execute(
+        select(VarianteValor.variante_id, ValorAtributo.valor)
+        .join(ValorAtributo, ValorAtributo.id == VarianteValor.valor_atributo_id)
+        .where(VarianteValor.variante_id.in_(variantes_ids))
+        # El orden por atributo_id es arbitrario pero CONSISTENTE: todas las
+        # variantes de un producto comparten los mismos atributos, asi que la
+        # descripcion se lee siempre en el mismo orden ("M / negro", nunca
+        # "negro / M" en la fila siguiente).
+        .order_by(VarianteValor.variante_id, ValorAtributo.atributo_id)
     ).all()
-    return " / ".join(valores) if valores else "Producto simple"
+
+    agrupadas: dict[uuid.UUID, list[str]] = {}
+    for variante_id, valor in filas:
+        agrupadas.setdefault(variante_id, []).append(valor)
+
+    return {
+        variante_id: " / ".join(agrupadas.get(variante_id, [])) or "Producto simple"
+        for variante_id in variantes_ids
+    }
+
+
+def descripcion_variante(sesion: Session, variante: Variante) -> str:
+    """
+    Descripcion de UNA variante.
+
+    Solo debe usarse cuando se trabaja con una variante suelta (por ejemplo la
+    pantalla de un movimiento). Para listas, usar descripciones_de(): llamar a
+    esta funcion en un bucle es precisamente el problema N+1 que se corrigio.
+    """
+    return descripciones_de(sesion, [variante.id])[variante.id]
 
 
 # ---------------------------------------------------------------------------
