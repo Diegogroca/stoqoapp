@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Error &middot; Stoqo{% endblock %}
+{% block contexto %}error{% endblock %}
+
+{% block contenido %}
+<div class="estrecho">
+  <p class="eyebrow">Algo fallo</p>
+  <h1>La operacion no se completo.</h1>
+  <p class="entrada">
+    Ningun dato se guardo a medias: si la operacion tocaba el inventario, la
+    transaccion se revirtio completa. Abajo esta el detalle tecnico.
+  </p>
+
+  <div class="panel">
+    <dl class="lista-dato">
+      <div><dt>Tipo de error</dt><dd>{{ tipo }}</dd></div>
+      <div><dt>Ruta</dt><dd>{{ ruta }}</dd></div>
+    </dl>
+    <p class="ayuda" style="margin-top:14px;font-family:var(--dato);word-break:break-word">
+      {{ mensaje }}
+    </p>
+  </div>
+
+  <a class="enlace-boton" href="/inventario">Volver al inventario</a>
+</div>
+{% endblock %}

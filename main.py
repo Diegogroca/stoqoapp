@@ -33,6 +33,29 @@ app.include_router(cuentas.router)
 app.include_router(inventario.router)
 
 
+@app.exception_handler(Exception)
+def error_no_previsto(request: Request, error: Exception):
+    """
+    Muestra el tipo y el mensaje del error en pantalla.
+
+    Sin esto, cualquier fallo en produccion devuelve un "Internal Server Error"
+    vacio y hay que ir a buscar los logs de la plataforma. Para un MVP academico
+    es mas util que la aplicacion diga que fallo: se puede diagnosticar desde el
+    navegador. Se muestra el tipo y el mensaje, nunca el traceback completo ni
+    valores de variables de entorno.
+    """
+    return templates.TemplateResponse(
+        request=request,
+        name="error.html",
+        context={
+            "tipo": type(error).__name__,
+            "mensaje": str(error) or "Sin mensaje.",
+            "ruta": request.url.path,
+        },
+        status_code=500,
+    )
+
+
 @app.exception_handler(SesionRequerida)
 def sin_sesion(request: Request, _error: SesionRequerida):
     """Cualquier ruta protegida sin sesion manda a la pantalla de entrada."""
