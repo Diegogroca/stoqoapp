@@ -62,7 +62,8 @@ alcance.py           Capa que acota toda lectura a la empresa autenticada.
 seguridad.py         Hash de contraseñas y firma de cookies de sesion.
 dependencias.py      Sesion de base de datos y empresa autenticada por peticion.
 vistas.py            Configuracion unica de las plantillas Jinja2.
-servicios/           Logica de negocio: cuentas, productos, movimientos, indicadores.
+servicios/           Logica de negocio: cuentas, productos, movimientos,
+                     indicadores, reportes y exportaciones.
 rutas/               Pantallas y formularios (routers de FastAPI).
 migrations/          Esquema SQL que se ejecuta en Supabase.
 templates/           Plantillas Jinja2 (base.html define los tokens de diseño).
@@ -104,9 +105,9 @@ pytest -v
 | 3 | Productos, atributos y variantes | Listo |
 | 4 | Motor de movimientos | Listo |
 | 5 | Dashboard y alertas | Listo |
-| 6 | Reportes, filtros y exportaciones | Pendiente |
-| 7 | Calidad de interfaz | Pendiente |
-| 8 | Pruebas y demostracion con KOVA | Pendiente |
+| 6 | Reportes, filtros y exportaciones | Listo |
+| 7 | Calidad de interfaz | Listo |
+| 8 | Pruebas y demostracion con KOVA | Listo |
 
 El orden responde a dependencias, no a preferencia: los reportes no se
 construyen antes de estabilizar el motor de movimientos, porque una cifra
@@ -150,6 +151,18 @@ correcta necesita un dato correcto.
   cantidad a las 49 variantes no describe ningun inventario real: 5 medianas
   azules y 4 grandes azules son cifras distintas. El alta define la estructura y
   una segunda pantalla captura las cantidades, cada una con su propio movimiento.
+- **Una sola consulta para pantalla, Excel y PDF.** Cada reporte es una funcion
+  que devuelve un objeto con titulo, columnas y filas; las tres salidas consumen
+  ese mismo objeto con los mismos filtros. No existen dos consultas que puedan
+  divergir, asi que el archivo descargado no puede mostrar un subconjunto distinto
+  del que se ve en pantalla. Es la mitigacion del riesgo "exportaciones distintas
+  a los filtros" resuelta por construccion y no por disciplina.
+- **En Excel los numeros son numeros.** El formato de moneda se aplica al estilo
+  de la celda, no al valor: una columna con el texto "$1,250.00" es inservible
+  para sumar o graficar.
+- **En movil las tablas se desplazan, no se recortan.** Esconder columnas en
+  pantallas chicas ocultaria datos del inventario; el contenedor permite
+  desplazamiento horizontal para que se vea todo.
 - **Cancelar no borra: compensa.** El movimiento original se marca como cancelado
   y se crea uno nuevo con el tipo opuesto, enlazado al primero. El historial
   conserva el error, la correccion y el stock final. Un original admite una sola
@@ -197,7 +210,71 @@ corrigieron.
 
 ---
 
+## Criterios de exito
+
+Los veinte criterios de la seccion 5 de la planeacion estan implementados como
+pruebas automatizadas en `tests/test_criterios_exito.py`, en el mismo orden y con
+la misma numeracion. La salida de `pytest -v` funciona como evidencia directa:
+
+```bash
+pytest tests/test_criterios_exito.py -v
+```
+
+| Criterio | Que verifica |
+|---|---|
+| CE-01 | Una empresa nueva no puede consultar datos de otra |
+| CE-02 | Onboarding: de cuenta nueva a inventario inicial coherente |
+| CE-03 | Producto simple con SKU unico y una variante base |
+| CE-04 | Dos atributos de 7 valores generan 49 combinaciones unicas |
+| CE-05 | Variantes manuales sin generar todas las posibles |
+| CE-06 | Una entrada de 10 aumenta el stock exactamente en 10 |
+| CE-07 | Una salida de 2 disminuye el stock exactamente en 2 |
+| CE-08 | Ajustes positivos y negativos aplican el delta correcto |
+| CE-09 | Stock negativo: sin confirmar no cambia; confirmado exige motivo |
+| CE-10 | Cancelar compensa, restaura el stock y no se puede repetir |
+| CE-11 | Los datos persisten tras cerrar y reabrir sesion |
+| CE-12 | Las metricas coinciden con el calculo manual |
+| CE-13 | Solo los productos bajo su minimo aparecen en alertas |
+| CE-14 | Los filtros cambian el subconjunto mostrado |
+| CE-15 | Los seis reportes abren y manejan periodos vacios |
+| CE-16 | El Excel abre, esta organizado y refleja el filtro |
+| CE-17 | El PDF se descarga legible con el mismo filtro |
+| CE-18 | Retirar conserva la identidad del producto en el historial |
+| CE-19 | Las rutas principales responden en computadora y celular |
+| CE-20 | Ninguna ruta rota ni operaciones parciales |
+
 ## Autoevaluacion
 
-_(Se escribe al cerrar el proyecto: que quedo solido, que quedo debil, que
-haria distinto y donde la IA ayudo o estorbo.)_
+**Lo que quedo solido.** El nucleo de trazabilidad. Ningun modulo salvo
+`servicios/movimientos.py` modifica el stock de una variante, y ese modulo lee con
+bloqueo de fila, deriva el signo del tipo de movimiento y confirma movimiento y
+stock en la misma transaccion. Eso hace que cada cifra del dashboard sea
+reconstruible desde su historial, que era la promesa central del proyecto. El
+aislamiento multiempresa tambien quedo firme porque no depende de que yo me
+acuerde de filtrar: las llaves foraneas compuestas lo impiden en la base de datos.
+
+**Lo que quedo debil.** Las pruebas corren sobre SQLite y la aplicacion en
+produccion sobre Postgres detras de un pooler. Esa diferencia me costo un fallo
+real (`DuplicatePreparedStatement`) que ninguna prueba podia detectar. La decision
+sigue siendo defendible —el CI no debe tener credenciales de produccion y una
+prueba con red no es repetible— pero el limite es real y lo tengo documentado. El
+otro punto debil es que los atributos de un producto no se pueden editar: es una
+decision consciente para no romper la trazabilidad, pero en un producto comercial
+haria falta una migracion de variantes.
+
+**Que haria distinto.** Probaria la aplicacion desplegada despues de cada etapa y
+no solo al final del bloque. Los dos errores mas caros del proyecto —la cantidad
+unica para 49 variantes y el `{% elif %}` invalido— aparecieron al usar la app, no
+al leer el codigo. Tambien habria agregado la pantalla de error y la prueba de
+compilacion de plantillas desde la Etapa 0: las dos surgieron como reaccion a un
+fallo, cuando debieron ser preventivas.
+
+**Donde la IA ayudo y donde estorbo.** Ayudo a traducir el pseudocodigo de mi
+planeacion a implementaciones con transacciones y restricciones correctas mucho mas
+rapido de lo que yo lo habria hecho, y detecto una contradiccion en mi propio
+documento (Streamlit no despliega en Vercel) antes de que me costara tiempo.
+Estorbo cuando implemento literalmente lo que decia mi planeacion sin notar que era
+incompatible con el resto de mi modelo: "existencia inicial" como un solo campo es
+coherente con la frase de mi documento y absurdo con 49 variantes. La correccion
+salio de probar la app, no de revisar el codigo. El registro completo esta en
+[`docs/bitacora-ia.md`](docs/bitacora-ia.md).
