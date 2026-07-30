@@ -331,7 +331,9 @@
     {% if empresa %}
     <nav>
       <span class="empresa">{{ empresa.nombre }}</span>
+      <a href="/panel">Panel</a>
       <a href="/inventario">Inventario</a>
+      <a href="/historial">Historial</a>
       <a href="/productos/nuevo">Nuevo producto</a>
       <form method="post" action="/salir" style="display:inline;margin:0">
         <button type="submit">Salir</button>

@@ -71,6 +71,10 @@
                style="font-size:13px">Existencias</a>
             <a href="/productos/{{ fila.producto.id }}/editar"
                style="font-size:13px;margin-left:10px">Editar</a>
+            {% if fila.variantes|length == 1 %}
+            <a href="/variantes/{{ fila.variantes[0].variante.id }}/movimiento"
+               style="font-size:13px;margin-left:10px">Mover</a>
+            {% endif %}
           </td>
           <td>
             {% if viendo_retirados %}
@@ -99,7 +103,10 @@
             <td></td>
             <td class="num">{{ detalle.variante.stock }}</td>
             <td></td>
-            <td></td>
+            <td>
+              <a href="/variantes/{{ detalle.variante.id }}/movimiento"
+                 style="font-size:13px">Mover</a>
+            </td>
             <td></td>
           </tr>
           {% endfor %}
