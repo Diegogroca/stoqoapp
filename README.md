@@ -121,6 +121,12 @@ correcta necesita un dato correcto.
   `Path(__file__).resolve().parent`.
 - **Sin secretos en el repositorio.** Las llaves viven en las variables de
   entorno de Vercel. La pantalla de estado solo indica si existen.
+- **Prepared statements desactivados (`prepare_threshold=None`).** psycopg3 crea
+  prepared statements del lado del servidor con nombres correlativos, y el pooler
+  de Supabase reutiliza la misma conexion de servidor entre peticiones distintas:
+  la segunda intenta declarar un nombre que ya existe y Postgres devuelve
+  `DuplicatePreparedStatement`. Se pierde una optimizacion menor y a cambio la
+  aplicacion funciona detras del pooler, que es obligatorio en serverless.
 - **Pooler en modo transaccion para Supabase.** En serverless las conexiones se
   abren y cierran en cada invocacion; la conexion directa agota el limite. Por
   eso el motor usa `NullPool`: el pool real vive en Supabase, no en la funcion.
