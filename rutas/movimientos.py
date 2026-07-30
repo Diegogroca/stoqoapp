@@ -21,7 +21,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from alcance import AlcanceEmpresa
@@ -38,7 +38,7 @@ from servicios.movimientos import (
     cancelar_movimiento,
     registrar_movimiento,
 )
-from servicios.productos import descripcion_variante
+from servicios.productos import descripcion_variante, descripciones_de
 from vistas import templates
 
 router = APIRouter()
@@ -162,6 +162,9 @@ def procesar_movimiento(
 # ---------------------------------------------------------------------------
 
 
+POR_PAGINA = 50
+
+
 def _filas_historial(
     sesion: Session,
     empresa_id: uuid.UUID,
@@ -170,8 +173,20 @@ def _filas_historial(
     solo_incidencias: bool = False,
     desde: date | None = None,
     hasta: date | None = None,
-) -> list[dict]:
-    """Historial con filtros, mas reciente primero."""
+    pagina: int = 1,
+    por_pagina: int = POR_PAGINA,
+) -> tuple[list[dict], dict]:
+    """
+    Historial con filtros y paginacion, mas reciente primero.
+
+    Antes esta funcion cortaba en 300 filas SIN avisar: un usuario con 400
+    movimientos creia estar viendo todo su historial y no era cierto. Un limite
+    silencioso es peor que una pantalla que dice cuantas paginas hay, porque el
+    usuario toma decisiones sobre datos incompletos sin saberlo.
+
+    Devuelve (filas, paginacion) donde paginacion trae el total real, la pagina
+    actual y cuantas paginas existen.
+    """
     consulta = (
         select(Movimiento)
         .where(Movimiento.empresa_id == empresa_id)
@@ -186,18 +201,49 @@ def _filas_historial(
     if hasta:
         consulta = consulta.where(Movimiento.registrado_en <= hasta)
 
+    # El total se cuenta con los MISMOS filtros: es lo que permite decir
+    # "pagina 2 de 9" en lugar de esconder el corte.
+    total = sesion.scalar(
+        select(func.count()).select_from(consulta.order_by(None).subquery())
+    ) or 0
+
+    paginas = max((total + por_pagina - 1) // por_pagina, 1)
+    pagina = min(max(pagina, 1), paginas)
+    desplazamiento = (pagina - 1) * por_pagina
+
+    movimientos = list(
+        sesion.scalars(consulta.limit(por_pagina).offset(desplazamiento)).all()
+    )
+
+    # Variantes, productos y descripciones en tres consultas, no en tres por fila.
+    variantes = {
+        v.id: v
+        for v in sesion.scalars(
+            select(Variante).where(
+                Variante.id.in_([m.variante_id for m in movimientos])
+            )
+        ).all()
+    }
+    productos = {
+        p.id: p
+        for p in sesion.scalars(
+            select(Producto).where(
+                Producto.id.in_([v.producto_id for v in variantes.values()])
+            )
+        ).all()
+    }
+    descripciones = descripciones_de(sesion, list(variantes))
+
     filas = []
-    for movimiento in sesion.scalars(consulta.limit(300)).all():
-        variante = sesion.get(Variante, movimiento.variante_id)
-        producto = sesion.get(Producto, variante.producto_id) if variante else None
+    for movimiento in movimientos:
+        variante = variantes.get(movimiento.variante_id)
+        producto = productos.get(variante.producto_id) if variante else None
         filas.append(
             {
                 "movimiento": movimiento,
                 "variante": variante,
                 "producto": producto,
-                "descripcion": (
-                    descripcion_variante(sesion, variante) if variante else ""
-                ),
+                "descripcion": descripciones.get(movimiento.variante_id, ""),
                 "etiqueta": ETIQUETA_TIPO.get(movimiento.tipo, movimiento.tipo),
                 # Solo se puede cancelar un original vivo.
                 "cancelable": (
@@ -205,7 +251,27 @@ def _filas_historial(
                 ),
             }
         )
-    return filas
+    return filas, {
+        "total": total,
+        "pagina": pagina,
+        "paginas": paginas,
+        "por_pagina": por_pagina,
+        "primero": desplazamiento + 1 if total else 0,
+        "ultimo": min(desplazamiento + por_pagina, total),
+    }
+
+
+def _contexto_historial(sesion: Session, empresa_id: uuid.UUID) -> dict:
+    """Contexto del historial sin filtros, para las respuestas de error."""
+    filas, paginacion = _filas_historial(sesion, empresa_id)
+    return {
+        "filas": filas,
+        "paginacion": paginacion,
+        "tipos": ETIQUETA_TIPO,
+        "tipo_activo": "",
+        "solo_incidencias": False,
+        "flujo": entradas_y_salidas(sesion, empresa_id),
+    }
 
 
 @router.get("/historial", response_class=HTMLResponse)
@@ -213,6 +279,7 @@ def ver_historial(
     request: Request,
     tipo: str = "",
     incidencias: int = 0,
+    pagina: int = 1,
     sesion: Session = Depends(obtener_sesion),
 ):
     datos = identidad(request)
@@ -220,17 +287,20 @@ def ver_historial(
         return redirigir_a_entrada()
 
     empresa = sesion.get(Empresa, datos["empresa"])
+    filas, paginacion = _filas_historial(
+        sesion,
+        datos["empresa"],
+        tipo=tipo,
+        solo_incidencias=bool(incidencias),
+        pagina=pagina,
+    )
     return templates.TemplateResponse(
         request=request,
         name="historial.html",
         context={
             "empresa": empresa,
-            "filas": _filas_historial(
-                sesion,
-                datos["empresa"],
-                tipo=tipo,
-                solo_incidencias=bool(incidencias),
-            ),
+            "filas": filas,
+            "paginacion": paginacion,
             "tipos": ETIQUETA_TIPO,
             "tipo_activo": tipo,
             "solo_incidencias": bool(incidencias),
@@ -266,11 +336,7 @@ def procesar_cancelacion(
             name="historial.html",
             context={
                 "empresa": empresa,
-                "filas": _filas_historial(sesion, datos["empresa"]),
-                "tipos": ETIQUETA_TIPO,
-                "tipo_activo": "",
-                "solo_incidencias": False,
-                "flujo": entradas_y_salidas(sesion, datos["empresa"]),
+                **_contexto_historial(sesion, datos["empresa"]),
                 "error": str(problema),
             },
             status_code=400,
@@ -282,11 +348,7 @@ def procesar_cancelacion(
             name="historial.html",
             context={
                 "empresa": empresa,
-                "filas": _filas_historial(sesion, datos["empresa"]),
-                "tipos": ETIQUETA_TIPO,
-                "tipo_activo": "",
-                "solo_incidencias": False,
-                "flujo": entradas_y_salidas(sesion, datos["empresa"]),
+                **_contexto_historial(sesion, datos["empresa"]),
                 "error": (
                     f"Cancelar dejaria el stock en {aviso.stock_posterior}. "
                     "Registra primero una entrada o confirma la incidencia desde "
@@ -315,18 +377,35 @@ def ver_panel(request: Request, sesion: Session = Depends(obtener_sesion)):
 
     # Los movimientos recientes se enriquecen con el nombre del producto para que
     # la lista sea legible sin abrir cada uno.
+    # Mismo criterio que en el historial: por lotes, no fila por fila.
+    variantes = {
+        v.id: v
+        for v in sesion.scalars(
+            select(Variante).where(
+                Variante.id.in_([m.variante_id for m in resumen["recientes"]])
+            )
+        ).all()
+    }
+    productos = {
+        p.id: p
+        for p in sesion.scalars(
+            select(Producto).where(
+                Producto.id.in_([v.producto_id for v in variantes.values()])
+            )
+        ).all()
+    }
+    descripciones = descripciones_de(sesion, list(variantes))
+
     recientes = []
     for movimiento in resumen["recientes"]:
-        variante = sesion.get(Variante, movimiento.variante_id)
-        producto = sesion.get(Producto, variante.producto_id) if variante else None
+        variante = variantes.get(movimiento.variante_id)
+        producto = productos.get(variante.producto_id) if variante else None
         recientes.append(
             {
                 "movimiento": movimiento,
                 "etiqueta": ETIQUETA_TIPO.get(movimiento.tipo, movimiento.tipo),
                 "producto": producto.nombre if producto else "",
-                "descripcion": (
-                    descripcion_variante(sesion, variante) if variante else ""
-                ),
+                "descripcion": descripciones.get(movimiento.variante_id, ""),
             }
         )
 

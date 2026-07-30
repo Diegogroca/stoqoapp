@@ -27,7 +27,7 @@ from servicios.productos import (
     actualizar_producto,
     contar_combinaciones,
     crear_producto,
-    descripcion_variante,
+    descripciones_de,
     reactivar_producto,
     retirar_producto,
 )
@@ -46,15 +46,35 @@ def _resumen_productos(
     lo que se compara contra el minimo. Es la regla de la planeacion: el minimo
     pertenece al producto, no a la variante.
     """
-    resumen = []
-    for producto in alcance.todos(Producto):
+    productos = [
         # Los productos retirados solo se listan cuando se piden explicitamente:
         # siguen existiendo para el historial, pero no estorban en el catalogo.
-        if producto.activo == retirados:
-            continue
-        variantes = sesion.scalars(
-            select(Variante).where(Variante.producto_id == producto.id)
-        ).all()
+        producto
+        for producto in alcance.todos(Producto)
+        if producto.activo != retirados
+    ]
+    if not productos:
+        return []
+
+    # Todas las variantes del catalogo en UNA consulta, agrupadas en memoria.
+    # Antes se consultaba producto por producto: con 10 productos eran 10
+    # consultas mas 49 por las descripciones de cada variante.
+    todas = sesion.scalars(
+        select(Variante)
+        .where(Variante.producto_id.in_([p.id for p in productos]))
+        .order_by(Variante.sku)
+    ).all()
+
+    por_producto: dict = {}
+    for variante in todas:
+        por_producto.setdefault(variante.producto_id, []).append(variante)
+
+    # Y todas las descripciones en UNA consulta mas.
+    descripciones = descripciones_de(sesion, [v.id for v in todas])
+
+    resumen = []
+    for producto in productos:
+        variantes = por_producto.get(producto.id, [])
         stock_total = sum(v.stock for v in variantes)
 
         if stock_total <= 0:
@@ -68,7 +88,7 @@ def _resumen_productos(
             {
                 "producto": producto,
                 "variantes": [
-                    {"variante": v, "descripcion": descripcion_variante(sesion, v)}
+                    {"variante": v, "descripcion": descripciones[v.id]}
                     for v in variantes
                 ],
                 "stock_total": stock_total,
@@ -250,14 +270,12 @@ def _variantes_del_producto(sesion: Session, producto: Producto) -> list[dict]:
     """Lista las variantes activas con su descripcion legible y su stock."""
     variantes = sesion.scalars(
         select(Variante)
-        .where(Variante.producto_id == producto.id, Variante.activa == True)  # noqa: E712
+        .where(Variante.producto_id == producto.id, Variante.activa.is_(True))
         .order_by(Variante.sku)
     ).all()
+    descripciones = descripciones_de(sesion, [v.id for v in variantes])
     return [
-        {
-            "variante": variante,
-            "descripcion": descripcion_variante(sesion, variante),
-        }
+        {"variante": variante, "descripcion": descripciones[variante.id]}
         for variante in variantes
     ]
 
