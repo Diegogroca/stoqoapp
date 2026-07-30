@@ -1,8 +1,10 @@
-name: Pruebas
+name: Calidad
 
 # Se ejecuta en cada push y en cada pull request.
-# Si las pruebas fallan, el commit queda marcado en rojo en GitHub:
-# es la red de seguridad antes de que Vercel publique un cambio roto.
+#
+# El objetivo es que ningun cambio llegue a produccion sin pasar tres controles
+# independientes. Vercel despliega automaticamente desde main, asi que este
+# workflow es la unica red de seguridad antes de que un error sea publico.
 
 on:
   push:
@@ -10,7 +12,7 @@ on:
   pull_request:
 
 jobs:
-  pytest:
+  calidad:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar el codigo
@@ -25,5 +27,23 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements-dev.txt
 
-      - name: Ejecutar pruebas
+      # 1. Estilo y errores estaticos. Detecta imports sin usar, variables
+      #    muertas y errores de sintaxis sin ejecutar el codigo.
+      - name: Revisar estilo con ruff
+        run: ruff check .
+
+      # 2. Sintaxis de plantillas. Se separa de pytest para que el motivo del
+      #    fallo sea evidente en el nombre del paso: un `{% elif %}` mal puesto
+      #    tumbo la aplicacion en produccion una vez y las pruebas no lo vieron.
+      - name: Compilar plantillas Jinja2
+        run: pytest tests/test_plantillas.py -q
+
+      # 3. Suite completa: reglas de negocio, aislamiento por empresa,
+      #    criterios de exito CE-01 a CE-20 y numero de consultas SQL.
+      - name: Ejecutar todas las pruebas
         run: pytest -v
+
+      # 4. Los criterios de exito por separado, para que su resultado quede
+      #    legible en el registro del workflow como evidencia de la entrega.
+      - name: Verificar criterios de exito de la planeacion
+        run: pytest tests/test_criterios_exito.py -v --no-header
