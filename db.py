@@ -19,6 +19,18 @@ from modelos import Base
 _motor = None
 _FabricaSesion = None
 
+# Incompatibilidad real entre psycopg3 y el pooler de Supabase en modo
+# transaccion: psycopg3 crea prepared statements del lado del servidor con
+# nombres correlativos (_pg3_0, _pg3_1...), pero el pooler reutiliza la misma
+# conexion de servidor para peticiones distintas. La segunda peticion intenta
+# declarar un nombre que ya existe y Postgres responde
+# DuplicatePreparedStatement.
+#
+# prepare_threshold=None desactiva los prepared statements. Se pierde una
+# optimizacion menor (Postgres reanaliza cada consulta) y a cambio la aplicacion
+# funciona detras del pooler, que es obligatorio en serverless.
+OPCIONES_CONEXION = {"prepare_threshold": None}
+
 
 def url_base_de_datos() -> str | None:
     """Devuelve la cadena de conexion, normalizada para SQLAlchemy."""
@@ -48,7 +60,12 @@ def motor():
                 "DATABASE_URL no esta configurada. "
                 "Definela en Vercel > Settings > Environment Variables."
             )
-        _motor = create_engine(url, poolclass=NullPool, future=True)
+        _motor = create_engine(
+            url,
+            poolclass=NullPool,
+            future=True,
+            connect_args=OPCIONES_CONEXION,
+        )
         _FabricaSesion = sessionmaker(bind=_motor, expire_on_commit=False)
     return _motor
 
