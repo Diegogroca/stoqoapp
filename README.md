@@ -62,7 +62,7 @@ alcance.py           Capa que acota toda lectura a la empresa autenticada.
 seguridad.py         Hash de contraseñas y firma de cookies de sesion.
 dependencias.py      Sesion de base de datos y empresa autenticada por peticion.
 vistas.py            Configuracion unica de las plantillas Jinja2.
-servicios/           Logica de negocio: cuentas y productos.
+servicios/           Logica de negocio: cuentas, productos y movimientos.
 rutas/               Pantallas y formularios (routers de FastAPI).
 migrations/          Esquema SQL que se ejecuta en Supabase.
 templates/           Plantillas Jinja2 (base.html define los tokens de diseño).
@@ -101,8 +101,8 @@ pytest -v
 | 0 | Esqueleto y despliegue en Vercel | Listo |
 | 1 | Modelo de datos y aislamiento por empresa | Listo |
 | 2 | Registro de cuenta y onboarding | Listo |
-| 3 | Productos, atributos y variantes | En curso |
-| 4 | Motor de movimientos | Pendiente |
+| 3 | Productos, atributos y variantes | Listo |
+| 4 | Motor de movimientos | En curso (nucleo listo, faltan pantallas) |
 | 5 | Dashboard y alertas | Pendiente |
 | 6 | Reportes, filtros y exportaciones | Pendiente |
 | 7 | Calidad de interfaz | Pendiente |
@@ -140,6 +140,14 @@ correcta necesita un dato correcto.
 - **La cookie es `secure` segun el esquema de la peticion.** Con `secure=True`
   fijo, la sesion funciona en Vercel pero es imposible probar la app en local o
   desde pytest, porque una cookie secure no viaja por http.
+- **Las existencias se capturan variante por variante.** Aplicar una sola
+  cantidad a las 49 variantes no describe ningun inventario real: 5 medianas
+  azules y 4 grandes azules son cifras distintas. El alta define la estructura y
+  una segunda pantalla captura las cantidades, cada una con su propio movimiento.
+- **Un solo lugar modifica el stock.** `servicios/movimientos.py` es el unico
+  modulo que escribe `variante.stock`. Lee el stock anterior con
+  `SELECT ... FOR UPDATE`, deriva el signo del tipo de movimiento (nunca del
+  formulario) y confirma movimiento y stock en la misma transaccion.
 - **El total de variantes se calcula antes de crearlas.** El producto cartesiano
   crece multiplicativamente (7 x 7 = 49, pero 30 x 30 = 900), asi que se cuenta y
   se valida contra un tope antes de escribir en la base.
