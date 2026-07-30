@@ -1,0 +1,337 @@
+"""
+Rutas de movimientos, historial y dashboard (Etapas 4 y 5).
+
+El flujo de stock negativo merece explicacion, porque es el unico caso del MVP
+donde una operacion se interrumpe para preguntar:
+
+1. El usuario envia una salida mayor al stock.
+2. El motor detecta que quedaria negativo, revierte y lanza la excepcion.
+3. Esta ruta atrapa la excepcion y devuelve la MISMA pantalla con una
+   advertencia, un campo de motivo obligatorio y una casilla de confirmacion.
+4. Si el usuario confirma, se reenvia con confirmar_negativo=True y ahora si se
+   registra, marcado como incidencia.
+
+En ningun momento se guarda algo a medias: el paso 2 revierte la transaccion.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date
+
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from alcance import AlcanceEmpresa
+from dependencias import identidad, obtener_sesion, redirigir_a_entrada
+from modelos import SIGNO_POR_TIPO, Empresa, Movimiento, Producto, Variante
+from servicios.indicadores import entradas_y_salidas, resumen_completo
+from servicios.movimientos import (
+    CantidadInvalida,
+    MotivoRequerido,
+    MovimientoNoCancelable,
+    StockNegativoRequiereConfirmacion,
+    TipoInvalido,
+    VarianteNoDisponible,
+    cancelar_movimiento,
+    registrar_movimiento,
+)
+from servicios.productos import descripcion_variante
+from vistas import templates
+
+router = APIRouter()
+
+ETIQUETA_TIPO = {
+    "entrada": "Entrada",
+    "salida": "Salida",
+    "ajuste_positivo": "Ajuste positivo",
+    "ajuste_negativo": "Ajuste negativo",
+}
+
+
+# ---------------------------------------------------------------------------
+# Registrar un movimiento
+# ---------------------------------------------------------------------------
+
+
+def _contexto_movimiento(sesion: Session, variante: Variante, **extra) -> dict:
+    producto = sesion.get(Producto, variante.producto_id)
+    contexto = {
+        "variante": variante,
+        "producto": producto,
+        "descripcion": descripcion_variante(sesion, variante),
+        "tipos": ETIQUETA_TIPO,
+    }
+    contexto.update(extra)
+    return contexto
+
+
+@router.get("/variantes/{variante_id}/movimiento", response_class=HTMLResponse)
+def mostrar_movimiento(
+    variante_id: uuid.UUID,
+    request: Request,
+    sesion: Session = Depends(obtener_sesion),
+):
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    alcance = AlcanceEmpresa(sesion, datos["empresa"])
+    variante = alcance.obtener(Variante, variante_id)
+    if variante is None:
+        return RedirectResponse("/inventario", status_code=303)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="movimiento_nuevo.html",
+        context=_contexto_movimiento(sesion, variante, datos={}),
+    )
+
+
+@router.post("/variantes/{variante_id}/movimiento")
+def procesar_movimiento(
+    variante_id: uuid.UUID,
+    request: Request,
+    tipo: str = Form(...),
+    cantidad: str = Form(...),
+    motivo: str = Form(""),
+    confirmar_negativo: str = Form(""),
+    sesion: Session = Depends(obtener_sesion),
+):
+    identificado = identidad(request)
+    if identificado is None:
+        return redirigir_a_entrada()
+
+    alcance = AlcanceEmpresa(sesion, identificado["empresa"])
+    variante = alcance.obtener(Variante, variante_id)
+    if variante is None:
+        return RedirectResponse("/inventario", status_code=303)
+
+    formulario = {"tipo": tipo, "cantidad": cantidad, "motivo": motivo}
+
+    def responder(codigo: int = 400, **extra):
+        return templates.TemplateResponse(
+            request=request,
+            name="movimiento_nuevo.html",
+            context=_contexto_movimiento(sesion, variante, datos=formulario, **extra),
+            status_code=codigo,
+        )
+
+    # La cantidad llega como texto para poder distinguir "abc" de un entero y dar
+    # un mensaje util en lugar de un error 422 generico de validacion.
+    try:
+        unidades = int(cantidad)
+    except (TypeError, ValueError):
+        return responder(error="La cantidad debe ser un numero entero.")
+
+    try:
+        registrar_movimiento(
+            sesion,
+            identificado["empresa"],
+            variante.id,
+            tipo,
+            unidades,
+            motivo=motivo or None,
+            confirmar_negativo=bool(confirmar_negativo),
+        )
+    except StockNegativoRequiereConfirmacion as aviso:
+        # No es un error: es una decision del propietario. Se le muestra el
+        # numero exacto al que quedaria y se le pide motivo.
+        return responder(
+            codigo=200,
+            advertencia_negativo=True,
+            stock_resultante=aviso.stock_posterior,
+        )
+    except MotivoRequerido as problema:
+        return responder(
+            codigo=200,
+            advertencia_negativo=True,
+            stock_resultante=variante.stock + SIGNO_POR_TIPO.get(tipo, 0) * unidades,
+            error=str(problema),
+        )
+    except (CantidadInvalida, TipoInvalido, VarianteNoDisponible) as problema:
+        return responder(error=str(problema))
+
+    return RedirectResponse("/historial", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Historial y cancelacion
+# ---------------------------------------------------------------------------
+
+
+def _filas_historial(
+    sesion: Session,
+    empresa_id: uuid.UUID,
+    *,
+    tipo: str = "",
+    solo_incidencias: bool = False,
+    desde: date | None = None,
+    hasta: date | None = None,
+) -> list[dict]:
+    """Historial con filtros, mas reciente primero."""
+    consulta = (
+        select(Movimiento)
+        .where(Movimiento.empresa_id == empresa_id)
+        .order_by(Movimiento.registrado_en.desc(), Movimiento.id)
+    )
+    if tipo in SIGNO_POR_TIPO:
+        consulta = consulta.where(Movimiento.tipo == tipo)
+    if solo_incidencias:
+        consulta = consulta.where(Movimiento.es_incidencia.is_(True))
+    if desde:
+        consulta = consulta.where(Movimiento.registrado_en >= desde)
+    if hasta:
+        consulta = consulta.where(Movimiento.registrado_en <= hasta)
+
+    filas = []
+    for movimiento in sesion.scalars(consulta.limit(300)).all():
+        variante = sesion.get(Variante, movimiento.variante_id)
+        producto = sesion.get(Producto, variante.producto_id) if variante else None
+        filas.append(
+            {
+                "movimiento": movimiento,
+                "variante": variante,
+                "producto": producto,
+                "descripcion": (
+                    descripcion_variante(sesion, variante) if variante else ""
+                ),
+                "etiqueta": ETIQUETA_TIPO.get(movimiento.tipo, movimiento.tipo),
+                # Solo se puede cancelar un original vivo.
+                "cancelable": (
+                    not movimiento.cancelado and movimiento.compensa_a is None
+                ),
+            }
+        )
+    return filas
+
+
+@router.get("/historial", response_class=HTMLResponse)
+def ver_historial(
+    request: Request,
+    tipo: str = "",
+    incidencias: int = 0,
+    sesion: Session = Depends(obtener_sesion),
+):
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    empresa = sesion.get(Empresa, datos["empresa"])
+    return templates.TemplateResponse(
+        request=request,
+        name="historial.html",
+        context={
+            "empresa": empresa,
+            "filas": _filas_historial(
+                sesion,
+                datos["empresa"],
+                tipo=tipo,
+                solo_incidencias=bool(incidencias),
+            ),
+            "tipos": ETIQUETA_TIPO,
+            "tipo_activo": tipo,
+            "solo_incidencias": bool(incidencias),
+            "flujo": entradas_y_salidas(sesion, datos["empresa"]),
+        },
+    )
+
+
+@router.post("/movimientos/{movimiento_id}/cancelar")
+def procesar_cancelacion(
+    movimiento_id: uuid.UUID,
+    request: Request,
+    motivo: str = Form(...),
+    confirmar_negativo: str = Form(""),
+    sesion: Session = Depends(obtener_sesion),
+):
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    try:
+        cancelar_movimiento(
+            sesion,
+            datos["empresa"],
+            movimiento_id,
+            motivo,
+            confirmar_negativo=bool(confirmar_negativo),
+        )
+    except (MovimientoNoCancelable, MotivoRequerido) as problema:
+        empresa = sesion.get(Empresa, datos["empresa"])
+        return templates.TemplateResponse(
+            request=request,
+            name="historial.html",
+            context={
+                "empresa": empresa,
+                "filas": _filas_historial(sesion, datos["empresa"]),
+                "tipos": ETIQUETA_TIPO,
+                "tipo_activo": "",
+                "solo_incidencias": False,
+                "flujo": entradas_y_salidas(sesion, datos["empresa"]),
+                "error": str(problema),
+            },
+            status_code=400,
+        )
+    except StockNegativoRequiereConfirmacion as aviso:
+        empresa = sesion.get(Empresa, datos["empresa"])
+        return templates.TemplateResponse(
+            request=request,
+            name="historial.html",
+            context={
+                "empresa": empresa,
+                "filas": _filas_historial(sesion, datos["empresa"]),
+                "tipos": ETIQUETA_TIPO,
+                "tipo_activo": "",
+                "solo_incidencias": False,
+                "flujo": entradas_y_salidas(sesion, datos["empresa"]),
+                "error": (
+                    f"Cancelar dejaria el stock en {aviso.stock_posterior}. "
+                    "Registra primero una entrada o confirma la incidencia desde "
+                    "la pantalla de movimiento."
+                ),
+            },
+            status_code=400,
+        )
+
+    return RedirectResponse("/historial", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+
+@router.get("/panel", response_class=HTMLResponse)
+def ver_panel(request: Request, sesion: Session = Depends(obtener_sesion)):
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    empresa = sesion.get(Empresa, datos["empresa"])
+    resumen = resumen_completo(sesion, datos["empresa"])
+
+    # Los movimientos recientes se enriquecen con el nombre del producto para que
+    # la lista sea legible sin abrir cada uno.
+    recientes = []
+    for movimiento in resumen["recientes"]:
+        variante = sesion.get(Variante, movimiento.variante_id)
+        producto = sesion.get(Producto, variante.producto_id) if variante else None
+        recientes.append(
+            {
+                "movimiento": movimiento,
+                "etiqueta": ETIQUETA_TIPO.get(movimiento.tipo, movimiento.tipo),
+                "producto": producto.nombre if producto else "",
+                "descripcion": (
+                    descripcion_variante(sesion, variante) if variante else ""
+                ),
+            }
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="panel.html",
+        context={"empresa": empresa, "r": resumen, "recientes": recientes},
+    )
