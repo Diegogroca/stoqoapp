@@ -144,6 +144,17 @@ correcta necesita un dato correcto.
   cantidad a las 49 variantes no describe ningun inventario real: 5 medianas
   azules y 4 grandes azules son cifras distintas. El alta define la estructura y
   una segunda pantalla captura las cantidades, cada una con su propio movimiento.
+- **Eliminar es retirar, no borrar (CE-18).** Un producto retirado queda inactivo
+  pero sus filas siguen existiendo, asi que los movimientos pasados conservan su
+  SKU, su nombre y sus cifras y un reporte antiguo sigue siendo legible. Un DELETE
+  real seria rechazado por las llaves foraneas de los movimientos.
+- **Los atributos no se editan.** Renombrar "Talla" o quitar un color obligaria a
+  reescribir el historial o a dejar movimientos huerfanos. Para cambiar la
+  estructura se crea un producto nuevo y se retira el anterior.
+- **Los errores se muestran en pantalla.** Un fallo en produccion devolvia un
+  "Internal Server Error" vacio y habia que ir a los logs de la plataforma. Ahora
+  la aplicacion muestra el tipo y el mensaje del error (nunca el traceback ni las
+  variables de entorno), de modo que se puede diagnosticar desde el navegador.
 - **Un solo lugar modifica el stock.** `servicios/movimientos.py` es el unico
   modulo que escribe `variante.stock`. Lee el stock anterior con
   `SELECT ... FOR UPDATE`, deriva el signo del tipo de movimiento (nunca del
