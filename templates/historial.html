@@ -1,6 +1,20 @@
 {% extends "base.html" %}
 {% block titulo %}Historial &middot; {{ empresa.nombre }}{% endblock %}
 
+{% block estilos %}
+<style>
+  .paginacion {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    justify-content: center;
+    padding: 6px 0 14px;
+    font-size: 14px;
+  }
+  .paginacion .inactivo { color: var(--tinta-45); }
+</style>
+{% endblock %}
+
 {% block contenido %}
 <div class="encabezado-seccion">
   <h1 style="font-size:28px;margin:0">Historial de movimientos</h1>
@@ -26,6 +40,10 @@
   {% if not filas %}
     <p class="ayuda">Todavia no hay movimientos con este filtro.</p>
   {% else %}
+  <p class="sku" style="margin:0 0 12px">
+    Mostrando {{ paginacion.primero }}&ndash;{{ paginacion.ultimo }}
+    de {{ paginacion.total }} movimientos
+  </p>
   <table>
     <thead>
       <tr>
@@ -84,6 +102,25 @@
   </table>
   {% endif %}
 </div>
+
+{% if paginacion.paginas > 1 %}
+<div class="paginacion">
+  {% set base = "/historial?" ~ ("tipo=" ~ tipo_activo ~ "&" if tipo_activo else "") ~ ("incidencias=1&" if solo_incidencias else "") %}
+  {% if paginacion.pagina > 1 %}
+    <a href="{{ base }}pagina={{ paginacion.pagina - 1 }}">&larr; Anteriores</a>
+  {% else %}
+    <span class="inactivo">&larr; Anteriores</span>
+  {% endif %}
+
+  <span class="sku">Pagina {{ paginacion.pagina }} de {{ paginacion.paginas }}</span>
+
+  {% if paginacion.pagina < paginacion.paginas %}
+    <a href="{{ base }}pagina={{ paginacion.pagina + 1 }}">Siguientes &rarr;</a>
+  {% else %}
+    <span class="inactivo">Siguientes &rarr;</span>
+  {% endif %}
+</div>
+{% endif %}
 
 <p class="ayuda">
   Cancelar no borra nada: marca el movimiento original como cancelado y crea una
