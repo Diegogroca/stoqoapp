@@ -12,6 +12,20 @@
     font-size: 14px;
   }
   .paginacion .inactivo { color: var(--tinta-45); }
+  .pestanas-vista { display: flex; gap: 8px; }
+  .pestanas-vista a {
+    font-size: 13px;
+    text-decoration: none;
+    padding: 6px 14px;
+    border: 1px solid var(--borde);
+    border-radius: 999px;
+    color: var(--tinta-70);
+  }
+  .pestanas-vista a.activa {
+    background: var(--tinta);
+    border-color: var(--tinta);
+    color: #fff;
+  }
 </style>
 {% endblock %}
 
@@ -26,6 +40,20 @@
 {% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
 
 <div class="panel">
+  <div class="encabezado-seccion" style="margin-bottom:12px">
+    <div class="pestanas-vista">
+      <a href="/historial" class="{% if vista != 'auditoria' %}activa{% endif %}">Operativo</a>
+      <a href="/historial?vista=auditoria" class="{% if vista == 'auditoria' %}activa{% endif %}">Auditoria</a>
+    </div>
+    <span class="sku">
+      {% if vista == "auditoria" %}
+        Incluye movimientos revertidos y sus correcciones.
+      {% else %}
+        Solo mercancia que se movio. Las correcciones estan en Auditoria.
+      {% endif %}
+    </span>
+  </div>
+
   <p class="ayuda" style="margin-bottom:14px">
     Filtrar:
     <a href="/historial">todos</a>
@@ -85,15 +113,8 @@
         <td class="sku">{{ fila.movimiento.motivo or "" }}</td>
         <td>
           {% if fila.cancelable %}
-          <form method="post" action="/movimientos/{{ fila.movimiento.id }}/cancelar"
-                style="margin:0;display:flex;gap:6px">
-            <input type="text" name="motivo" required placeholder="Motivo"
-                   style="width:120px;padding:5px 8px;font-size:12px">
-            <button type="submit"
-                    style="background:none;border:1px solid var(--borde);border-radius:6px;color:var(--alerta);cursor:pointer;font-size:12px;padding:5px 9px">
-              Cancelar
-            </button>
-          </form>
+          <a href="/movimientos/{{ fila.movimiento.id }}/cancelar"
+             style="font-size:13px;color:var(--alerta);white-space:nowrap">Revertir</a>
           {% endif %}
         </td>
       </tr>
@@ -105,7 +126,7 @@
 
 {% if paginacion.paginas > 1 %}
 <div class="paginacion">
-  {% set base = "/historial?" ~ ("tipo=" ~ tipo_activo ~ "&" if tipo_activo else "") ~ ("incidencias=1&" if solo_incidencias else "") %}
+  {% set base = "/historial?" ~ ("tipo=" ~ tipo_activo ~ "&" if tipo_activo else "") ~ ("incidencias=1&" if solo_incidencias else "") ~ ("vista=auditoria&" if vista == "auditoria" else "") %}
   {% if paginacion.pagina > 1 %}
     <a href="{{ base }}pagina={{ paginacion.pagina - 1 }}">&larr; Anteriores</a>
   {% else %}
@@ -123,8 +144,9 @@
 {% endif %}
 
 <p class="ayuda">
-  Cancelar no borra nada: marca el movimiento original como cancelado y crea una
-  compensacion con el delta contrario. Las tres filas quedan visibles para que el
-  historial explique el error, la correccion y el stock final.
+  Revertir no borra nada: marca el movimiento original y crea una correccion con
+  el efecto contrario. En la vista Operativo ninguna de las dos aparece, porque no
+  son mercancia que se movio; en Auditoria se ven las dos, para poder explicar
+  cualquier cifra.
 </p>
 {% endblock %}
