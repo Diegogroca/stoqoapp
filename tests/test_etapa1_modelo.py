@@ -336,3 +336,39 @@ def test_el_id_de_empresa_se_genera_en_python(sesion: Session):
     sesion.add(empresa)
     sesion.flush()
     assert isinstance(empresa.id, uuid.UUID)
+
+
+# ---------------------------------------------------------------------------
+# Configuracion del motor de produccion
+# ---------------------------------------------------------------------------
+
+
+def test_el_motor_desactiva_los_prepared_statements():
+    """
+    Regresion de un fallo real en produccion.
+
+    psycopg3 crea prepared statements con nombres correlativos y el pooler de
+    Supabase reutiliza conexiones entre peticiones, lo que produce
+    DuplicatePreparedStatement. Esta prueba fija la configuracion para que nadie
+    la quite sin darse cuenta al refactorizar.
+
+    Se comprueba la constante y no el motor porque crear el motor exige tener el
+    driver de Postgres instalado, y las pruebas deben poder correr sin el.
+    """
+    from db import OPCIONES_CONEXION
+
+    assert OPCIONES_CONEXION["prepare_threshold"] is None
+
+
+def test_la_url_usa_el_driver_psycopg(monkeypatch):
+    import db
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host:6543/postgres")
+    assert db.url_base_de_datos().startswith("postgresql+psycopg://")
+
+
+def test_sin_variable_no_hay_url(monkeypatch):
+    import db
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert db.url_base_de_datos() is None
