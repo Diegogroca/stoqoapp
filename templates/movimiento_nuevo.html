@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block titulo %}Movimiento &middot; {{ variante.sku }}{% endblock %}
+
+{% block contenido %}
+<div class="estrecho">
+  <p class="eyebrow">{{ producto.nombre }} &middot; {{ descripcion }}</p>
+  <h1>Registrar movimiento.</h1>
+
+  <div class="panel">
+    <dl class="lista-dato">
+      <div><dt>SKU</dt><dd>{{ variante.sku }}</dd></div>
+      <div><dt>Stock actual</dt><dd>{{ variante.stock }}</dd></div>
+    </dl>
+  </div>
+
+  {% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
+
+  {% if advertencia_negativo %}
+  <div class="aviso-error">
+    <strong>Esta salida deja el stock en {{ stock_resultante }}.</strong><br>
+    El sistema no lo impide, pero exige que quede justificado: escribe el motivo
+    y confirma. El movimiento quedara marcado como incidencia en el historial.
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <form method="post" action="/variantes/{{ variante.id }}/movimiento">
+      <div class="duo">
+        <div class="campo">
+          <label for="tipo">Tipo de movimiento</label>
+          <select id="tipo" name="tipo" required>
+            {% for clave, etiqueta in tipos.items() %}
+            <option value="{{ clave }}"
+              {% if datos.tipo == clave %}selected{% endif %}>{{ etiqueta }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="cantidad">Cantidad</label>
+          <input type="number" id="cantidad" name="cantidad" min="1" step="1" required
+                 value="{{ datos.cantidad or '' }}">
+          <p class="ayuda">Siempre positiva. El signo lo define el tipo.</p>
+        </div>
+      </div>
+
+      <div class="campo">
+        <label for="motivo">
+          Motivo {% if advertencia_negativo %}(obligatorio){% else %}(opcional){% endif %}
+        </label>
+        <input type="text" id="motivo" name="motivo" value="{{ datos.motivo or '' }}"
+               {% if advertencia_negativo %}required{% endif %}
+               placeholder="Venta en tienda, merma, conteo fisico...">
+      </div>
+
+      {% if advertencia_negativo %}
+      <div class="campo">
+        <label style="display:flex;align-items:center;gap:9px;font-weight:500">
+          <input type="checkbox" name="confirmar_negativo" value="1" required
+                 style="width:auto">
+          Confirmo que el stock quede en {{ stock_resultante }}
+        </label>
+      </div>
+      {% endif %}
+
+      <button type="submit" class="principal">
+        {% if advertencia_negativo %}Confirmar movimiento{% else %}Registrar{% endif %}
+      </button>
+      <a href="/inventario" style="margin-left:14px;font-size:14px">Cancelar</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

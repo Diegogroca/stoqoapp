@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block titulo %}Historial &middot; {{ empresa.nombre }}{% endblock %}
+
+{% block contenido %}
+<div class="encabezado-seccion">
+  <h1 style="font-size:28px;margin:0">Historial de movimientos</h1>
+  <span class="sku">
+    {{ flujo.entradas }} unidades entraron &middot; {{ flujo.salidas }} salieron
+  </span>
+</div>
+
+{% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
+
+<div class="panel">
+  <p class="ayuda" style="margin-bottom:14px">
+    Filtrar:
+    <a href="/historial">todos</a>
+    {% for clave, etiqueta in tipos.items() %}
+      &middot; <a href="/historial?tipo={{ clave }}"
+        {% if tipo_activo == clave %}style="font-weight:700"{% endif %}>{{ etiqueta }}</a>
+    {% endfor %}
+    &middot; <a href="/historial?incidencias=1"
+      {% if solo_incidencias %}style="font-weight:700"{% endif %}>solo incidencias</a>
+  </p>
+
+  {% if not filas %}
+    <p class="ayuda">Todavia no hay movimientos con este filtro.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Producto</th>
+        <th>Tipo</th>
+        <th class="num">Antes</th>
+        <th class="num">Delta</th>
+        <th class="num">Despues</th>
+        <th>Motivo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for fila in filas %}
+      <tr {% if fila.movimiento.cancelado %}style="opacity:.55"{% endif %}>
+        <td class="sku">{{ fila.movimiento.registrado_en.strftime("%d/%m/%y %H:%M") }}</td>
+        <td>
+          {{ fila.producto.nombre if fila.producto else "" }}
+          <div class="sku">{{ fila.descripcion }} &middot; {{ fila.variante.sku }}</div>
+        </td>
+        <td>
+          {{ fila.etiqueta }}
+          {% if fila.movimiento.es_incidencia %}
+            <div><span class="marca-estado espera">Incidencia</span></div>
+          {% endif %}
+          {% if fila.movimiento.cancelado %}
+            <div class="sku">cancelado</div>
+          {% endif %}
+          {% if fila.movimiento.compensa_a %}
+            <div class="sku">compensacion</div>
+          {% endif %}
+        </td>
+        <td class="num">{{ fila.movimiento.stock_anterior }}</td>
+        <td class="num" style="color:{% if fila.movimiento.delta > 0 %}var(--acento){% else %}var(--alerta){% endif %}">
+          {{ "+" if fila.movimiento.delta > 0 else "" }}{{ fila.movimiento.delta }}
+        </td>
+        <td class="num">{{ fila.movimiento.stock_posterior }}</td>
+        <td class="sku">{{ fila.movimiento.motivo or "" }}</td>
+        <td>
+          {% if fila.cancelable %}
+          <form method="post" action="/movimientos/{{ fila.movimiento.id }}/cancelar"
+                style="margin:0;display:flex;gap:6px">
+            <input type="text" name="motivo" required placeholder="Motivo"
+                   style="width:120px;padding:5px 8px;font-size:12px">
+            <button type="submit"
+                    style="background:none;border:1px solid var(--borde);border-radius:6px;color:var(--alerta);cursor:pointer;font-size:12px;padding:5px 9px">
+              Cancelar
+            </button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<p class="ayuda">
+  Cancelar no borra nada: marca el movimiento original como cancelado y crea una
+  compensacion con el delta contrario. Las tres filas quedan visibles para que el
+  historial explique el error, la correccion y el stock final.
+</p>
+{% endblock %}

@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block titulo %}Panel &middot; {{ empresa.nombre }}{% endblock %}
+
+{% block estilos %}
+<style>
+  .barra-proporcion {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--acento-sup);
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .barra-proporcion span { display: block; height: 100%; background: var(--acento); }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<p class="eyebrow">{{ empresa.nombre }}</p>
+<h1 style="margin-bottom:26px">Panel de inventario</h1>
+
+<div class="metricas">
+  <div class="metrica">
+    <span class="etiqueta">Unidades disponibles</span>
+    <span class="cifra">{{ r.unidades }}</span>
+  </div>
+  <div class="metrica">
+    <span class="etiqueta">Valor a costo</span>
+    <span class="cifra">${{ "{:,.2f}".format(r.valor) }}</span>
+  </div>
+  <div class="metrica">
+    <span class="etiqueta">Productos con alerta</span>
+    <span class="cifra">{{ r.total_alertas }}</span>
+  </div>
+  <div class="metrica">
+    <span class="etiqueta">Entradas registradas</span>
+    <span class="cifra">{{ r.flujo.entradas }}</span>
+  </div>
+  <div class="metrica">
+    <span class="etiqueta">Salidas registradas</span>
+    <span class="cifra">{{ r.flujo.salidas }}</span>
+  </div>
+  <div class="metrica">
+    <span class="etiqueta">Movimientos operativos</span>
+    <span class="cifra">{{ r.flujo.movimientos }}</span>
+  </div>
+</div>
+
+<div class="rejilla">
+  <div class="panel">
+    <h2>Requieren reposicion</h2>
+    {% if not r.alertas %}
+      <p class="ayuda">Ningun producto esta por debajo de su minimo.</p>
+    {% else %}
+    <table>
+      <thead>
+        <tr><th>Producto</th><th class="num">Stock</th><th class="num">Minimo</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        {% for fila in r.alertas %}
+        <tr>
+          <td>{{ fila.nombre }}</td>
+          <td class="num">{{ fila.stock_total }}</td>
+          <td class="num">{{ fila.minimo }}</td>
+          <td>
+            {% if fila.estado == "agotado" %}
+              <span class="marca-estado espera">Agotado</span>
+            {% else %}
+              <span class="marca-estado espera">Stock bajo</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>Mayor movimiento</h2>
+    {% if not r.mas_movidos %}
+      <p class="ayuda">Aun no hay movimientos operativos que ordenar.</p>
+    {% else %}
+      {% set tope = r.mas_movidos[0].volumen or 1 %}
+      {% for fila in r.mas_movidos %}
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;font-size:14px">
+          <span>{{ fila.nombre }}</span>
+          <span class="sku">{{ fila.volumen }} unidades &middot; {{ fila.movimientos }} mov.</span>
+        </div>
+        <div class="barra-proporcion">
+          <span style="width:{{ (fila.volumen / tope * 100) | round(1) }}%"></span>
+        </div>
+      </div>
+      {% endfor %}
+      <p class="ayuda">
+        El volumen suma valores absolutos: un producto que entro 100 y salio 100
+        tuvo mucha actividad aunque su neto sea cero. Se excluyen cancelaciones.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Inventario por categoria</h2>
+  {% if not r.categorias %}
+    <p class="ayuda">Todavia no hay productos.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr><th>Categoria</th><th class="num">Unidades</th><th class="num">Valor a costo</th></tr>
+    </thead>
+    <tbody>
+      {% for fila in r.categorias %}
+      <tr>
+        <td>{{ fila.categoria }}</td>
+        <td class="num">{{ fila.unidades }}</td>
+        <td class="num">${{ "{:,.2f}".format(fila.valor) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <div class="encabezado-seccion">
+    <h2>Actividad reciente</h2>
+    <a href="/historial" style="font-size:14px">Ver historial completo</a>
+  </div>
+  {% if not recientes %}
+    <p class="ayuda">Sin movimientos todavia.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr>
+        <th>Fecha</th><th>Producto</th><th>Tipo</th>
+        <th class="num">Delta</th><th class="num">Stock</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for fila in recientes %}
+      <tr {% if fila.movimiento.cancelado %}style="opacity:.55"{% endif %}>
+        <td class="sku">{{ fila.movimiento.registrado_en.strftime("%d/%m %H:%M") }}</td>
+        <td>{{ fila.producto }}<div class="sku">{{ fila.descripcion }}</div></td>
+        <td>
+          {{ fila.etiqueta }}
+          {% if fila.movimiento.es_incidencia %}
+            <span class="marca-estado espera">Incidencia</span>
+          {% endif %}
+        </td>
+        <td class="num" style="color:{% if fila.movimiento.delta > 0 %}var(--acento){% else %}var(--alerta){% endif %}">
+          {{ "+" if fila.movimiento.delta > 0 else "" }}{{ fila.movimiento.delta }}
+        </td>
+        <td class="num">{{ fila.movimiento.stock_posterior }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}
