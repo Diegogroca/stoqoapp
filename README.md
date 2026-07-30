@@ -38,7 +38,8 @@ usuarios o sucursales, facturacion y notificaciones.
 | Excel | openpyxl | Exportaciones sin dependencias de sistema |
 | PDF | ReportLab | Reportes descargables con formato controlado |
 | Pruebas | pytest | Cada criterio de exito (CE-01 a CE-20) se vuelve una prueba |
-| CI | GitHub Actions | Ejecuta las pruebas en cada push antes de que Vercel publique |
+| Linter | ruff | Detecta imports sin usar y errores estaticos antes de ejecutar |
+| CI | GitHub Actions | Linter, compilacion de plantillas y pruebas en cada push |
 | Despliegue | Vercel | Funcion serverless de Python, despliegue automatico desde `main` |
 
 ### Por que no Streamlit
@@ -69,6 +70,7 @@ migrations/          Esquema SQL que se ejecuta en Supabase.
 templates/           Plantillas Jinja2 (base.html define los tokens de diseño).
 tests/               Un archivo de pruebas por etapa.
 docs/bitacora-ia.md  Prompts, resultados y correcciones del trabajo con IA.
+docs/complejidad.md  Complejidad planeada contra implementada, con mediciones.
 .github/workflows/   Pruebas automaticas en cada push.
 requirements.txt     Dependencias que instala Vercel.
 requirements-dev.txt Dependencias de desarrollo y CI.
@@ -151,6 +153,16 @@ correcta necesita un dato correcto.
   cantidad a las 49 variantes no describe ningun inventario real: 5 medianas
   azules y 4 grandes azules son cifras distintas. El alta define la estructura y
   una segunda pantalla captura las cantidades, cada una con su propio movimiento.
+- **Se corrigio un problema N+1 medido, no supuesto.** El catalogo resolvia la
+  descripcion de cada variante con una consulta por variante: 50 consultas para
+  pintar el caso KOVA de 49 variantes. Ahora son 4, y el numero no crece con el
+  inventario. Las mediciones y el analisis estan en
+  [`docs/complejidad.md`](docs/complejidad.md); `tests/test_eficiencia_consultas.py`
+  cuenta las consultas reales y falla si alguien reintroduce el patron.
+- **El historial pagina y dice cuantos hay.** Antes cortaba en 300 filas en
+  silencio: un usuario con 400 movimientos creia ver todo su historial y no era
+  cierto. Un limite invisible es peor que una pantalla que informa el total,
+  porque se toman decisiones sobre datos incompletos sin saberlo.
 - **Una sola consulta para pantalla, Excel y PDF.** Cada reporte es una funcion
   que devuelve un objeto con titulo, columnas y filas; las tres salidas consumen
   ese mismo objeto con los mismos filtros. No existen dos consultas que puedan
@@ -220,6 +232,10 @@ la misma numeracion. La salida de `pytest -v` funciona como evidencia directa:
 pytest tests/test_criterios_exito.py -v
 ```
 
+El CI de GitHub Actions ejecuta cuatro controles en cada push: linter (`ruff`),
+compilacion de las plantillas Jinja2, la suite completa y los criterios de exito
+por separado para que su resultado quede legible en el registro del workflow.
+
 | Criterio | Que verifica |
 |---|---|
 | CE-01 | Una empresa nueva no puede consultar datos de otra |
@@ -253,7 +269,14 @@ reconstruible desde su historial, que era la promesa central del proyecto. El
 aislamiento multiempresa tambien quedo firme porque no depende de que yo me
 acuerde de filtrar: las llaves foraneas compuestas lo impiden en la base de datos.
 
-**Lo que quedo debil.** Las pruebas corren sobre SQLite y la aplicacion en
+**Lo que quedo debil.** El costo unitario es un solo campo por producto, y eso es
+un error contable de fondo que reconozco: si compro 100 polos a $200 y despues 100
+a $260, el valor a costo que muestra el sistema deja de ser correcto desde ese
+momento. Un sistema real usa costo promedio ponderado o PEPS y lo recalcula en cada
+entrada. No es cosmetico, porque la cifra sobre la que el dueño toma decisiones
+queda desviada.
+
+Las pruebas corren sobre SQLite y la aplicacion en
 produccion sobre Postgres detras de un pooler. Esa diferencia me costo un fallo
 real (`DuplicatePreparedStatement`) que ninguna prueba podia detectar. La decision
 sigue siendo defendible —el CI no debe tener credenciales de produccion y una
@@ -261,6 +284,34 @@ prueba con red no es repetible— pero el limite es real y lo tengo documentado.
 otro punto debil es que los atributos de un producto no se pueden editar: es una
 decision consciente para no romper la trazabilidad, pero en un producto comercial
 haria falta una migracion de variantes.
+
+**Trabajo futuro, en orden de prioridad.**
+
+1. **Costo promedio ponderado.** Es la correccion mas importante porque afecta la
+   exactitud de una cifra de negocio, no solo la comodidad.
+2. **Usuarios con roles** (dueño, almacenista, vendedor). Sin ellos la
+   trazabilidad dice que paso pero no QUIEN lo hizo, que es justo lo que se
+   pregunta cuando falta mercancia.
+3. **Captura por WhatsApp.** El obstaculo real de cualquier inventario manual es
+   el abandono: si el registro no ocurre, las cifras dejan de cuadrar y se vuelve a
+   Excel. Nadie abre una app web en medio de una venta, pero WhatsApp ya esta
+   abierto.
+4. **Codigo de barras con la camara del celular** e importacion masiva desde
+   Excel: nadie captura 500 SKUs a mano.
+5. **Reporte de fuga.** Stoqo ya guarda incidencias y ajustes negativos con
+   motivo, algo que las herramientas de este segmento no hacen con esta
+   disciplina. Con esos datos se puede responder cuanta mercancia desaparecio en
+   un periodo y donde se concentra, que es informacion por la que un dueño paga.
+6. **Prediccion de agotado** en lugar de minimos fijos: el historial permite
+   calcular velocidad de venta por variante y estimar en cuantos dias se agota.
+7. Proveedores y ordenes de compra, multiples almacenes, conteo ciclico.
+
+**Sobre el alcance elegido.** El MVP se planteo para "cualquier negocio con
+productos fisicos", y esa amplitud es su punto mas debil como producto: una
+herramienta generica rara vez es mejor que Excel para alguien en particular. La
+parte mas fuerte del sistema es el manejo de atributos y variantes, que es
+precisamente donde las herramientas genericas fallan. Un producto comercial deberia
+enfocarse en marcas de ropa y calzado con 50 a 500 SKUs, que es el caso KOVA.
 
 **Que haria distinto.** Probaria la aplicacion desplegada despues de cada etapa y
 no solo al final del bloque. Los dos errores mas caros del proyecto —la cantidad
