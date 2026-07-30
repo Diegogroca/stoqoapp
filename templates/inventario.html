@@ -30,8 +30,15 @@
 
   <div class="panel">
     <div class="encabezado-seccion">
-      <h2>Catalogo</h2>
-      <a class="enlace-boton" href="/productos/nuevo">Nuevo producto</a>
+      <h2>{% if viendo_retirados %}Productos retirados{% else %}Catalogo{% endif %}</h2>
+      <div>
+        {% if viendo_retirados %}
+          <a href="/inventario" style="font-size:14px;margin-right:16px">Ver catalogo</a>
+        {% else %}
+          <a href="/inventario?retirados=1" style="font-size:14px;margin-right:16px">Ver retirados</a>
+        {% endif %}
+        <a class="enlace-boton" href="/productos/nuevo">Nuevo producto</a>
+      </div>
     </div>
 
     <table>
@@ -62,9 +69,17 @@
           <td>
             <a href="/productos/{{ fila.producto.id }}/existencias"
                style="font-size:13px">Existencias</a>
+            <a href="/productos/{{ fila.producto.id }}/editar"
+               style="font-size:13px;margin-left:10px">Editar</a>
           </td>
           <td>
-            {% if fila.estado == "disponible" %}
+            {% if viendo_retirados %}
+            <form method="post" action="/productos/{{ fila.producto.id }}/reactivar" style="margin:0">
+              <button type="submit" style="background:none;border:0;color:var(--acento);cursor:pointer;font-size:13px;padding:0">
+                Reactivar
+              </button>
+            </form>
+            {% elif fila.estado == "disponible" %}
               <span class="marca-estado ok">Disponible</span>
             {% elif fila.estado == "bajo" %}
               <span class="marca-estado espera">Stock bajo</span>
