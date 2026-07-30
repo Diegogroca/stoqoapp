@@ -62,7 +62,7 @@ alcance.py           Capa que acota toda lectura a la empresa autenticada.
 seguridad.py         Hash de contraseñas y firma de cookies de sesion.
 dependencias.py      Sesion de base de datos y empresa autenticada por peticion.
 vistas.py            Configuracion unica de las plantillas Jinja2.
-servicios/           Logica de negocio: cuentas, productos y movimientos.
+servicios/           Logica de negocio: cuentas, productos, movimientos, indicadores.
 rutas/               Pantallas y formularios (routers de FastAPI).
 migrations/          Esquema SQL que se ejecuta en Supabase.
 templates/           Plantillas Jinja2 (base.html define los tokens de diseño).
@@ -102,8 +102,8 @@ pytest -v
 | 1 | Modelo de datos y aislamiento por empresa | Listo |
 | 2 | Registro de cuenta y onboarding | Listo |
 | 3 | Productos, atributos y variantes | Listo |
-| 4 | Motor de movimientos | En curso (nucleo listo, faltan pantallas) |
-| 5 | Dashboard y alertas | Pendiente |
+| 4 | Motor de movimientos | Listo |
+| 5 | Dashboard y alertas | Listo |
 | 6 | Reportes, filtros y exportaciones | Pendiente |
 | 7 | Calidad de interfaz | Pendiente |
 | 8 | Pruebas y demostracion con KOVA | Pendiente |
@@ -150,6 +150,21 @@ correcta necesita un dato correcto.
   cantidad a las 49 variantes no describe ningun inventario real: 5 medianas
   azules y 4 grandes azules son cifras distintas. El alta define la estructura y
   una segunda pantalla captura las cantidades, cada una con su propio movimiento.
+- **Cancelar no borra: compensa.** El movimiento original se marca como cancelado
+  y se crea uno nuevo con el tipo opuesto, enlazado al primero. El historial
+  conserva el error, la correccion y el stock final. Un original admite una sola
+  compensacion (unique en la base) y una compensacion no se puede cancelar.
+- **Los rankings excluyen cancelaciones.** Una correccion contable no es mercancia
+  que se movio, asi que los indicadores de actividad filtran cancelados y
+  compensaciones. Siguen visibles en el historial de auditoria.
+- **El volumen usa valores absolutos.** Un producto que entro 100 y salio 100 tuvo
+  mucha actividad aunque su neto sea cero.
+- **El minimo pertenece al producto, no a la variante.** Se compara contra la suma
+  de las variantes activas: 6 en talla M mas 6 en L son 12 unidades y no estan
+  bajo un minimo de 10, aunque cada variante suelta parezca escasa.
+- **Los indicadores se calculan en SQL.** Agregaciones con GROUP BY y sumas
+  condicionales en lugar de traer todas las filas a memoria: en una funcion
+  serverless la memoria es limitada y Postgres suma con indice.
 - **Eliminar es retirar, no borrar (CE-18).** Un producto retirado queda inactivo
   pero sus filas siguen existiendo, asi que los movimientos pasados conservan su
   SKU, su nombre y sus cifras y un reporte antiguo sigue siendo legible. Un DELETE
