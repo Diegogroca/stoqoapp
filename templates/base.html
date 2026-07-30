@@ -317,10 +317,32 @@
     gap: 16px;
     margin-bottom: 18px;
   }
+  /* ---------- Etapa 7: adaptacion a celular ----------
+     Las tablas de inventario tienen muchas columnas. En lugar de esconder
+     columnas (lo que ocultaria datos), el contenedor permite desplazamiento
+     horizontal: se ve todo, se navega con el dedo. */
+  .panel { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
   @media (max-width: 620px) {
     .duo { grid-template-columns: 1fr; }
     .encabezado-seccion { flex-direction: column; align-items: flex-start; }
     table { font-size: 13px; }
+    .metricas { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+    .metrica .cifra { font-size: 22px; }
+    h1 { font-size: 26px; }
+  }
+
+  @media (max-width: 760px) {
+    /* La navegacion se envuelve en dos lineas antes que salirse de la pantalla. */
+    .barra { flex-wrap: wrap; row-gap: 10px; padding: 12px 16px; }
+    .barra nav { margin-left: 0; width: 100%; gap: 14px; flex-wrap: wrap; }
+    .barra nav .empresa { width: 100%; }
+  }
+
+  /* Objetivos de toque de al menos 40px de alto en celular. */
+  @media (hover: none) {
+    .barra nav a, .barra nav button { padding: 6px 0; }
+    button.principal, .enlace-boton { padding: 13px 20px; }
   }
 </style>
 {% block estilos %}{% endblock %}
@@ -334,6 +356,7 @@
       <a href="/panel">Panel</a>
       <a href="/inventario">Inventario</a>
       <a href="/historial">Historial</a>
+      <a href="/reportes">Reportes</a>
       <a href="/productos/nuevo">Nuevo producto</a>
       <form method="post" action="/salir" style="display:inline;margin:0">
         <button type="submit">Salir</button>
