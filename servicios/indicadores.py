@@ -15,7 +15,7 @@ auditoria, que es donde deben estar.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -26,9 +26,9 @@ from modelos import Categoria, Movimiento, Producto, Variante
 def _rango(desde: date | None, hasta: date | None):
     """Convierte fechas de formulario en limites con hora, o None."""
     inicio = (
-        datetime.combine(desde, time.min, tzinfo=timezone.utc) if desde else None
+        datetime.combine(desde, time.min, tzinfo=UTC) if desde else None
     )
-    fin = datetime.combine(hasta, time.max, tzinfo=timezone.utc) if hasta else None
+    fin = datetime.combine(hasta, time.max, tzinfo=UTC) if hasta else None
     return inicio, fin
 
 

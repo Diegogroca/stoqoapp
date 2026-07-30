@@ -17,7 +17,7 @@ marcas. El aislamiento deja de depender de que el programador se acuerde.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -51,7 +51,7 @@ def nuevo_id() -> uuid.UUID:
 
 def ahora() -> datetime:
     """Marca de tiempo con zona horaria explicita."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # Tipos de movimiento permitidos y el signo que aplica cada uno al stock.

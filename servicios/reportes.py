@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -77,12 +77,12 @@ class Filtros:
     def limites(self):
         """Convierte las fechas en instantes con hora, o None."""
         inicio = (
-            datetime.combine(self.desde, time.min, tzinfo=timezone.utc)
+            datetime.combine(self.desde, time.min, tzinfo=UTC)
             if self.desde
             else None
         )
         fin = (
-            datetime.combine(self.hasta, time.max, tzinfo=timezone.utc)
+            datetime.combine(self.hasta, time.max, tzinfo=UTC)
             if self.hasta
             else None
         )

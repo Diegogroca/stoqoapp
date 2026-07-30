@@ -24,10 +24,9 @@ from servicios.cuentas import (
     registrar,
 )
 from servicios.productos import (
-    MAXIMO_VARIANTES,
     DemasiadasVariantes,
-    contar_combinaciones,
     combinaciones,
+    contar_combinaciones,
     crear_producto,
     generar_sku,
     prefijo_desde_nombre,
@@ -184,7 +183,7 @@ def test_el_sku_no_se_repite_dentro_de_la_empresa(sesion: Session):
 def test_el_sku_salta_un_consecutivo_ocupado(sesion: Session):
     """Caso limite: 'SKU generado ya existe' se resuelve con otro consecutivo."""
     empresa, _ = registrar(sesion, "KOVA", "dueno@kova.com", "clave_seguraKOVA")
-    producto = crear_producto(sesion, empresa.id, "Polo")
+    crear_producto(sesion, empresa.id, "Polo")
     ocupado = sesion.scalars(select(Variante.sku)).first()
     nuevo = generar_sku(sesion, empresa.id, "Polo")
     assert nuevo != ocupado
