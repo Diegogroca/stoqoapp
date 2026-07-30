@@ -24,16 +24,21 @@ from servicios.productos import (
     MAXIMO_VARIANTES,
     CombinacionRepetida,
     DemasiadasVariantes,
+    actualizar_producto,
     contar_combinaciones,
     crear_producto,
     descripcion_variante,
+    reactivar_producto,
+    retirar_producto,
 )
 from vistas import templates
 
 router = APIRouter()
 
 
-def _resumen_productos(sesion: Session, alcance: AlcanceEmpresa) -> list[dict]:
+def _resumen_productos(
+    sesion: Session, alcance: AlcanceEmpresa, *, retirados: bool = False
+) -> list[dict]:
     """
     Arma el catalogo con el estado de stock de cada producto.
 
@@ -43,12 +48,12 @@ def _resumen_productos(sesion: Session, alcance: AlcanceEmpresa) -> list[dict]:
     """
     resumen = []
     for producto in alcance.todos(Producto):
-        if not producto.activo:
+        # Los productos retirados solo se listan cuando se piden explicitamente:
+        # siguen existiendo para el historial, pero no estorban en el catalogo.
+        if producto.activo == retirados:
             continue
         variantes = sesion.scalars(
-            select(Variante).where(
-                Variante.producto_id == producto.id, Variante.activa == True  # noqa: E712
-            )
+            select(Variante).where(Variante.producto_id == producto.id)
         ).all()
         stock_total = sum(v.stock for v in variantes)
 
@@ -75,14 +80,18 @@ def _resumen_productos(sesion: Session, alcance: AlcanceEmpresa) -> list[dict]:
 
 
 @router.get("/inventario", response_class=HTMLResponse)
-def ver_inventario(request: Request, sesion: Session = Depends(obtener_sesion)):
+def ver_inventario(
+    request: Request,
+    retirados: int = 0,
+    sesion: Session = Depends(obtener_sesion),
+):
     datos = identidad(request)
     if datos is None:
         return redirigir_a_entrada()
 
     alcance = AlcanceEmpresa(sesion, datos["empresa"])
     empresa = sesion.get(Empresa, datos["empresa"])
-    catalogo = _resumen_productos(sesion, alcance)
+    catalogo = _resumen_productos(sesion, alcance, retirados=bool(retirados))
 
     return templates.TemplateResponse(
         request=request,
@@ -90,6 +99,7 @@ def ver_inventario(request: Request, sesion: Session = Depends(obtener_sesion)):
         context={
             "empresa": empresa,
             "catalogo": catalogo,
+            "viendo_retirados": bool(retirados),
             "unidades": sum(fila["stock_total"] for fila in catalogo),
             "valor_total": sum(fila["valor"] for fila in catalogo),
             "con_alerta": sum(1 for fila in catalogo if fila["estado"] != "disponible"),
@@ -353,3 +363,134 @@ async def procesar_existencias(
         return con_error(str(problema))
 
     return RedirectResponse("/inventario", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Editar y retirar
+# ---------------------------------------------------------------------------
+
+
+@router.get("/productos/{producto_id}/editar", response_class=HTMLResponse)
+def mostrar_edicion(
+    producto_id: uuid.UUID,
+    request: Request,
+    sesion: Session = Depends(obtener_sesion),
+):
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    alcance = AlcanceEmpresa(sesion, datos["empresa"])
+    producto = alcance.obtener(Producto, producto_id)
+    if producto is None:
+        return RedirectResponse("/inventario", status_code=303)
+
+    categoria = None
+    if producto.categoria_id:
+        categoria = sesion.get(Categoria, producto.categoria_id)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="producto_editar.html",
+        context={
+            "producto": producto,
+            "categoria_actual": categoria.nombre if categoria else "",
+            "categorias": list(
+                sesion.scalars(
+                    select(Categoria.nombre).where(
+                        Categoria.empresa_id == datos["empresa"]
+                    )
+                ).all()
+            ),
+            "filas": _variantes_del_producto(sesion, producto),
+        },
+    )
+
+
+@router.post("/productos/{producto_id}/editar")
+def procesar_edicion(
+    producto_id: uuid.UUID,
+    request: Request,
+    nombre: str = Form(...),
+    categoria: str = Form(""),
+    unidad: str = Form("pieza"),
+    costo: float = Form(0),
+    minimo: int = Form(0),
+    sesion: Session = Depends(obtener_sesion),
+):
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    alcance = AlcanceEmpresa(sesion, datos["empresa"])
+    producto = alcance.obtener(Producto, producto_id)
+    if producto is None:
+        return RedirectResponse("/inventario", status_code=303)
+
+    try:
+        actualizar_producto(
+            sesion,
+            producto,
+            nombre=nombre,
+            categoria=categoria,
+            unidad=unidad,
+            costo=costo,
+            minimo=minimo,
+        )
+    except ValueError as problema:
+        return templates.TemplateResponse(
+            request=request,
+            name="producto_editar.html",
+            context={
+                "producto": producto,
+                "categoria_actual": categoria,
+                "categorias": [],
+                "filas": _variantes_del_producto(sesion, producto),
+                "error": str(problema),
+            },
+            status_code=400,
+        )
+
+    return RedirectResponse("/inventario", status_code=303)
+
+
+@router.post("/productos/{producto_id}/retirar")
+def procesar_retiro(
+    producto_id: uuid.UUID,
+    request: Request,
+    sesion: Session = Depends(obtener_sesion),
+):
+    """
+    Retira el producto del catalogo conservando su historial (CE-18).
+
+    No es un DELETE: los movimientos pasados siguen apuntando a estas variantes y
+    un reporte de hace meses debe seguir siendo legible.
+    """
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    alcance = AlcanceEmpresa(sesion, datos["empresa"])
+    producto = alcance.obtener(Producto, producto_id)
+    if producto is not None:
+        retirar_producto(sesion, producto)
+
+    return RedirectResponse("/inventario", status_code=303)
+
+
+@router.post("/productos/{producto_id}/reactivar")
+def procesar_reactivacion(
+    producto_id: uuid.UUID,
+    request: Request,
+    sesion: Session = Depends(obtener_sesion),
+):
+    datos = identidad(request)
+    if datos is None:
+        return redirigir_a_entrada()
+
+    alcance = AlcanceEmpresa(sesion, datos["empresa"])
+    producto = alcance.obtener(Producto, producto_id)
+    if producto is not None:
+        reactivar_producto(sesion, producto)
+
+    return RedirectResponse("/inventario?retirados=1", status_code=303)
