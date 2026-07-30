@@ -159,6 +159,22 @@ correcta necesita un dato correcto.
   inventario. Las mediciones y el analisis estan en
   [`docs/complejidad.md`](docs/complejidad.md); `tests/test_eficiencia_consultas.py`
   cuenta las consultas reales y falla si alguien reintroduce el patron.
+- **Dos vistas del historial: Operativo y Auditoria.** El mismo registro sirve a
+  dos audiencias con necesidades opuestas. Un dueño quiere ver que mercancia se
+  movio; un contador quiere ver todo, incluidos los errores y como se corrigieron.
+  Mostrarle el registro contable a quien solo queria el resumen era lo que hacia
+  confusa la pantalla. La vista Operativo es la de omision y oculta movimientos
+  revertidos y sus correcciones; Auditoria las muestra. Ningun dato se pierde en
+  ningun caso: cambia lo que se ve por omision.
+- **Revertir es una pantalla, no un campo en la tabla.** El formulario vivia dentro
+  de una celda con scroll horizontal, asi que el aviso del navegador por el campo
+  obligatorio quedaba recortado y parecia que el boton no hacia nada. Ademas decia
+  "Cancelar", que en cualquier interfaz significa "abortar". La pantalla dedicada
+  muestra el movimiento, explica que el original no se borra y dice a que cifra
+  quedara el stock antes de confirmar.
+- **Graficas en SVG generado desde el servidor.** Sin librerias de graficas: no
+  agrega peso al bundle serverless, no depende de un CDN externo y los datos ya
+  vienen calculados. Para barras y columnas el SVG es suficiente.
 - **El historial pagina y dice cuantos hay.** Antes cortaba en 300 filas en
   silencio: un usuario con 400 movimientos creia ver todo su historial y no era
   cierto. Un limite invisible es peor que una pantalla que informa el total,
