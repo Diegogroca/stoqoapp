@@ -11,6 +11,42 @@
     margin-top: 6px;
   }
   .barra-proporcion span { display: block; height: 100%; background: var(--acento); }
+
+  /* ---------- Graficas ----------
+     Se dibujan con SVG generado desde Jinja2, sin librerias de graficas. Tres
+     razones: no se agrega peso al bundle serverless, no se depende de un CDN
+     externo, y los datos ya vienen calculados del servidor. Para barras y
+     columnas el SVG es suficiente. */
+  .grafica { width: 100%; height: auto; display: block; }
+  .leyenda {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--tinta-70);
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .leyenda span { display: flex; align-items: center; gap: 6px; }
+  .cuadro { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  .filas-atributo { display: grid; gap: 9px; }
+  .fila-atributo { display: grid; grid-template-columns: 90px 1fr 52px; align-items: center; gap: 10px; font-size: 13px; }
+  .fila-atributo .valor { color: var(--tinta-70); }
+  .fila-atributo .cifra { text-align: right; font-family: var(--dato); font-weight: 700; font-size: 12px; }
+  .pista { background: var(--pagina); border-radius: 4px; height: 18px; overflow: hidden; }
+  .pista span { display: block; height: 100%; background: var(--acento); border-radius: 4px; }
+  .selector-atributo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .selector-atributo button {
+    font-family: var(--texto);
+    font-size: 13px;
+    padding: 6px 13px;
+    border: 1px solid var(--borde);
+    border-radius: 999px;
+    background: var(--superficie);
+    color: var(--tinta-70);
+    cursor: pointer;
+  }
+  .selector-atributo button.activo { background: var(--tinta); border-color: var(--tinta); color: #fff; }
+  .grupo-atributo[hidden] { display: none; }
 </style>
 {% endblock %}
 
@@ -122,6 +158,124 @@
   {% endif %}
 </div>
 
+
+<!-- ---------- Grafica 1: inventario por atributo ---------- -->
+{% if por_atributo %}
+<div class="panel">
+  <h2>Inventario por atributo</h2>
+  <p class="ayuda" style="margin-bottom:14px">
+    Con decenas de variantes el catalogo es ilegible. Agregado por atributo
+    responde preguntas concretas: de que talla hay mas inventario, que color se
+    esta acumulando.
+  </p>
+
+  <div class="selector-atributo">
+    {% for atributo in por_atributo %}
+    <button type="button" data-atributo="{{ loop.index0 }}"
+            class="{% if loop.first %}activo{% endif %}">{{ atributo }}</button>
+    {% endfor %}
+  </div>
+
+  {% for atributo, valores in por_atributo.items() %}
+  <div class="grupo-atributo" data-grupo="{{ loop.index0 }}"
+       {% if not loop.first %}hidden{% endif %}>
+    {% set tope = valores[0].unidades or 1 %}
+    <div class="filas-atributo">
+      {% for fila in valores %}
+      <div class="fila-atributo">
+        <span class="valor">{{ fila.valor }}</span>
+        <span class="pista">
+          <span style="width:{{ (fila.unidades / tope * 100) | round(1) }}%"></span>
+        </span>
+        <span class="cifra">{{ fila.unidades }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ---------- Grafica 2: flujo de los ultimos 14 dias ---------- -->
+<div class="panel">
+  <h2>Movimiento de los ultimos 14 dias</h2>
+  <div class="leyenda">
+    <span><i class="cuadro" style="background:var(--acento)"></i> Entradas</span>
+    <span><i class="cuadro" style="background:var(--alerta)"></i> Salidas</span>
+  </div>
+
+  {% if tope_diario == 0 %}
+    <p class="ayuda">Sin movimientos registrados en este periodo.</p>
+  {% else %}
+    {% set ancho = 700 %}
+    {% set alto = 190 %}
+    {% set eje = 95 %}
+    {% set paso = ancho / diario|length %}
+    <svg class="grafica" viewBox="0 0 {{ ancho }} {{ alto }}" role="img"
+         aria-label="Entradas y salidas diarias de los ultimos 14 dias">
+      <!-- Eje central: las entradas suben, las salidas bajan. Un solo eje
+           permite comparar de un vistazo si el inventario crece o se vacia. -->
+      <line x1="0" y1="{{ eje }}" x2="{{ ancho }}" y2="{{ eje }}"
+            stroke="#DFE6E9" stroke-width="1"/>
+      {% for dia in diario %}
+        {% set x = loop.index0 * paso %}
+        {% set ancho_barra = paso * 0.34 %}
+        {% if dia.entradas > 0 %}
+        <rect x="{{ x + paso * 0.14 }}"
+              y="{{ eje - (dia.entradas / tope_diario * 80) }}"
+              width="{{ ancho_barra }}"
+              height="{{ (dia.entradas / tope_diario * 80) }}"
+              fill="#0E9384" rx="2"/>
+        {% endif %}
+        {% if dia.salidas > 0 %}
+        <rect x="{{ x + paso * 0.52 }}" y="{{ eje }}"
+              width="{{ ancho_barra }}"
+              height="{{ (dia.salidas / tope_diario * 80) }}"
+              fill="#B4541E" rx="2"/>
+        {% endif %}
+        <text x="{{ x + paso / 2 }}" y="{{ alto - 6 }}" text-anchor="middle"
+              font-size="9" fill="#7C8B99" font-family="monospace">{{ dia.etiqueta }}</text>
+      {% endfor %}
+    </svg>
+    <p class="ayuda">
+      Se excluyen movimientos revertidos y sus correcciones: la grafica muestra
+      mercancia que se movio, no ajustes administrativos.
+    </p>
+  {% endif %}
+</div>
+
+<!-- ---------- Grafica 3: concentracion del valor ---------- -->
+{% if concentracion %}
+<div class="panel">
+  <h2>Donde esta detenido el dinero</h2>
+  <p class="ayuda" style="margin-bottom:14px">
+    Productos ordenados por el valor que inmovilizan. Normalmente unos pocos
+    concentran la mayor parte del capital en almacen: son los que conviene
+    vigilar de cerca y los ultimos que se deben sobre-comprar.
+  </p>
+  {% set tope_valor = concentracion[0].valor or 1 %}
+  <div class="filas-atributo">
+    {% for fila in concentracion %}
+    <div class="fila-atributo" style="grid-template-columns:150px 1fr 118px">
+      <span class="valor">{{ fila.nombre }}</span>
+      <span class="pista">
+        <span style="width:{{ (fila.valor / tope_valor * 100) | round(1) }}%"></span>
+      </span>
+      <span class="cifra">
+        ${{ "{:,.0f}".format(fila.valor) }}
+        <span style="color:var(--tinta-45);font-weight:400"> {{ fila.porcentaje }}%</span>
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="ayuda" style="margin-top:12px">
+    Los {{ concentracion|length }} productos mostrados concentran el
+    <strong>{{ concentracion[-1].acumulado }}%</strong> del valor total del
+    inventario.
+  </p>
+</div>
+{% endif %}
+
 <div class="panel">
   <div class="encabezado-seccion">
     <h2>Actividad reciente</h2>
@@ -158,4 +312,19 @@
   </table>
   {% endif %}
 </div>
+<script>
+  // Cambia entre atributos sin recargar. Los datos de todos los atributos ya
+  // vienen en el HTML: no hay peticion al servidor al cambiar de pestaña.
+  document.querySelectorAll(".selector-atributo button").forEach((boton) => {
+    boton.addEventListener("click", () => {
+      const elegido = boton.dataset.atributo;
+      document.querySelectorAll(".selector-atributo button").forEach((otro) => {
+        otro.classList.toggle("activo", otro === boton);
+      });
+      document.querySelectorAll(".grupo-atributo").forEach((grupo) => {
+        grupo.hidden = grupo.dataset.grupo !== elegido;
+      });
+    });
+  });
+</script>
 {% endblock %}
