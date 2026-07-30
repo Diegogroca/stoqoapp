@@ -15,7 +15,7 @@ auditoria, que es donde deben estar.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -263,3 +263,144 @@ def resumen_completo(sesion: Session, empresa_id: uuid.UUID) -> dict:
         "categorias": resumen_por_categoria(sesion, empresa_id),
         "recientes": actividad_reciente(sesion, empresa_id),
     }
+
+
+# ---------------------------------------------------------------------------
+# Series para graficas
+# ---------------------------------------------------------------------------
+
+
+def stock_por_atributo(sesion: Session, empresa_id: uuid.UUID) -> dict[str, list[dict]]:
+    """
+    Unidades disponibles agrupadas por cada valor de cada atributo.
+
+    Responde una pregunta que el catalogo no contesta: "de que talla tengo mas
+    inventario" o "que color se me acumula". Con 49 variantes esa informacion
+    esta en la pantalla pero es ilegible; agregada por atributo se vuelve
+    accionable.
+
+    Una sola consulta para todos los atributos: se agrupa por (atributo, valor) y
+    se reparte en Python.
+    """
+    from modelos import Atributo, ValorAtributo, VarianteValor
+
+    filas = sesion.execute(
+        select(
+            Atributo.nombre,
+            ValorAtributo.valor,
+            func.coalesce(func.sum(Variante.stock), 0),
+        )
+        .select_from(VarianteValor)
+        .join(ValorAtributo, ValorAtributo.id == VarianteValor.valor_atributo_id)
+        .join(Atributo, Atributo.id == ValorAtributo.atributo_id)
+        .join(Variante, Variante.id == VarianteValor.variante_id)
+        .where(Variante.empresa_id == empresa_id, Variante.activa.is_(True))
+        .group_by(Atributo.nombre, ValorAtributo.valor)
+        .order_by(Atributo.nombre, func.coalesce(func.sum(Variante.stock), 0).desc())
+    ).all()
+
+    agrupado: dict[str, list[dict]] = {}
+    for atributo, valor, unidades in filas:
+        agrupado.setdefault(atributo, []).append(
+            {"valor": valor, "unidades": int(unidades or 0)}
+        )
+    return agrupado
+
+
+def flujo_diario(
+    sesion: Session, empresa_id: uuid.UUID, dias: int = 14
+) -> list[dict]:
+    """
+    Entradas y salidas por dia de los ultimos N dias.
+
+    Se rellenan los dias sin movimiento con ceros: una grafica con huecos miente
+    sobre el ritmo del negocio, porque un dia sin ventas parece no existir en
+    lugar de aparecer como un valle.
+    """
+    hoy = datetime.now(UTC).date()
+    primero = hoy - timedelta(days=dias - 1)
+    inicio = datetime.combine(primero, time.min, tzinfo=UTC)
+
+    dia = func.date(Movimiento.registrado_en)
+    filas = sesion.execute(
+        select(
+            dia,
+            func.coalesce(
+                func.sum(case((Movimiento.delta > 0, Movimiento.delta), else_=0)), 0
+            ),
+            func.coalesce(
+                func.sum(case((Movimiento.delta < 0, -Movimiento.delta), else_=0)), 0
+            ),
+        )
+        .where(
+            Movimiento.empresa_id == empresa_id,
+            Movimiento.cancelado.is_(False),
+            Movimiento.compensa_a.is_(None),
+            Movimiento.registrado_en >= inicio,
+        )
+        .group_by(dia)
+    ).all()
+
+    por_dia = {
+        str(fecha): {"entradas": int(e or 0), "salidas": int(s or 0)}
+        for fecha, e, s in filas
+    }
+
+    serie = []
+    for desplazamiento in range(dias):
+        fecha = primero + timedelta(days=desplazamiento)
+        datos = por_dia.get(str(fecha), {"entradas": 0, "salidas": 0})
+        serie.append(
+            {
+                "fecha": fecha,
+                "etiqueta": fecha.strftime("%d/%m"),
+                "entradas": datos["entradas"],
+                "salidas": datos["salidas"],
+            }
+        )
+    return serie
+
+
+def concentracion_del_valor(
+    sesion: Session, empresa_id: uuid.UUID, limite: int = 8
+) -> list[dict]:
+    """
+    Productos ordenados por el valor que inmovilizan, con porcentaje acumulado.
+
+    Es el analisis ABC clasico de inventarios: normalmente una minoria de
+    productos concentra la mayoria del dinero detenido en almacen. Saber cuales
+    son dice donde vigilar el stock y donde se puede ser laxo.
+    """
+    filas = sesion.execute(
+        select(
+            Producto.nombre,
+            func.coalesce(func.sum(Variante.stock * Producto.costo), 0).label("valor"),
+        )
+        .join(Variante, Variante.producto_id == Producto.id)
+        .where(
+            Producto.empresa_id == empresa_id,
+            Producto.activo.is_(True),
+            Variante.activa.is_(True),
+        )
+        .group_by(Producto.id, Producto.nombre)
+        .order_by(func.coalesce(func.sum(Variante.stock * Producto.costo), 0).desc())
+    ).all()
+
+    total = sum(float(valor or 0) for _, valor in filas)
+    if total <= 0:
+        return []
+
+    serie = []
+    acumulado = 0.0
+    for nombre, valor in filas[:limite]:
+        valor = float(valor or 0)
+        acumulado += valor
+        serie.append(
+            {
+                "nombre": nombre,
+                "valor": valor,
+                "porcentaje": round(valor / total * 100, 1),
+                "acumulado": round(acumulado / total * 100, 1),
+            }
+        )
+    return serie
