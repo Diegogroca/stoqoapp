@@ -146,7 +146,6 @@ def crear_polo(cliente: TestClient, **cambios):
         "unidad": "pieza",
         "costo": 250,
         "minimo": 10,
-        "existencia_inicial": 5,
         "atributo_1": "Talla",
         "valores_1": "S, M, L",
         "atributo_2": "Color",
@@ -156,24 +155,23 @@ def crear_polo(cliente: TestClient, **cambios):
     return cliente.post("/productos/nuevo", data=datos, follow_redirects=True)
 
 
-def test_crear_un_producto_con_variantes_llena_el_catalogo(cliente: TestClient):
+def test_crear_un_producto_lleva_a_capturar_existencias(cliente: TestClient):
+    """El alta define la estructura; las cantidades se capturan despues."""
     registrar_kova(cliente)
     respuesta = crear_polo(cliente)
 
     assert respuesta.status_code == 200
-    assert "Catalogo" in respuesta.text
-    assert "Polo Premium" in respuesta.text
-    # 3 tallas x 2 colores = 6 variantes, 5 unidades cada una = 30 en total.
-    assert ">6<" in respuesta.text
-    assert ">30<" in respuesta.text
+    assert "Captura las existencias" in respuesta.text
+    # 3 tallas x 2 colores = 6 filas, una por variante.
+    assert respuesta.text.count('name="cantidad_') == 6
 
 
 def test_un_producto_simple_tambien_aparece(cliente: TestClient):
     registrar_kova(cliente)
-    respuesta = crear_polo(
+    crear_polo(
         cliente, nombre="Gorra", atributo_1="", valores_1="", atributo_2="", valores_2=""
     )
-    assert "Gorra" in respuesta.text
+    assert "Gorra" in cliente.get("/inventario").text
 
 
 def test_demasiadas_variantes_devuelve_el_formulario_con_el_error(cliente: TestClient):
