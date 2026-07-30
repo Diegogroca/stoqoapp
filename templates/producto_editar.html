@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block titulo %}Editar {{ producto.nombre }} &middot; Stoqo{% endblock %}
+
+{% block contenido %}
+<div class="estrecho">
+  <p class="eyebrow">Editar producto</p>
+  <h1>{{ producto.nombre }}</h1>
+
+  {% if error %}<div class="aviso-error">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <form method="post" action="/productos/{{ producto.id }}/editar">
+      <div class="campo">
+        <label for="nombre">Nombre del producto</label>
+        <input type="text" id="nombre" name="nombre" required value="{{ producto.nombre }}">
+      </div>
+
+      <div class="duo">
+        <div class="campo">
+          <label for="categoria">Categoria</label>
+          <input type="text" id="categoria" name="categoria" list="categorias-existentes"
+                 value="{{ categoria_actual }}">
+          <datalist id="categorias-existentes">
+            {% for nombre in categorias %}<option value="{{ nombre }}">{% endfor %}
+          </datalist>
+        </div>
+        <div class="campo">
+          <label for="unidad">Unidad de medida</label>
+          <input type="text" id="unidad" name="unidad" value="{{ producto.unidad }}">
+        </div>
+      </div>
+
+      <div class="duo">
+        <div class="campo">
+          <label for="costo">Costo unitario</label>
+          <input type="number" id="costo" name="costo" min="0" step="0.01"
+                 value="{{ producto.costo }}">
+        </div>
+        <div class="campo">
+          <label for="minimo">Minimo de reposicion</label>
+          <input type="number" id="minimo" name="minimo" min="0" step="1"
+                 value="{{ producto.minimo }}">
+        </div>
+      </div>
+
+      <button type="submit" class="principal">Guardar cambios</button>
+      <a href="/inventario" style="margin-left:14px;font-size:14px">Cancelar</a>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Variantes</h2>
+    <p class="ayuda" style="margin-bottom:14px">
+      Los atributos y sus valores no se pueden editar. Renombrar o borrar una
+      variante reescribiria el historial de los movimientos que la referencian.
+      Para cambiar la estructura, crea un producto nuevo y retira este.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Variante</th><th>SKU</th><th class="num">Stock</th></tr>
+      </thead>
+      <tbody>
+        {% for fila in filas %}
+        <tr>
+          <td>{{ fila.descripcion }}</td>
+          <td class="sku">{{ fila.variante.sku }}</td>
+          <td class="num">{{ fila.variante.stock }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="ayuda" style="margin-top:14px">
+      <a href="/productos/{{ producto.id }}/existencias">Cargar o ajustar existencias</a>
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Retirar del catalogo</h2>
+    <p class="ayuda" style="margin-bottom:14px">
+      El producto deja de aparecer en el inventario, pero su historial se
+      conserva: los movimientos pasados siguen mostrando su nombre, su SKU y sus
+      cifras. Puedes reactivarlo despues.
+    </p>
+    <form method="post" action="/productos/{{ producto.id }}/retirar"
+          onsubmit="return confirm('Retirar {{ producto.nombre }} del catalogo? Su historial se conserva.')">
+      <button type="submit" class="principal" style="background:var(--alerta)">
+        Retirar del catalogo
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
