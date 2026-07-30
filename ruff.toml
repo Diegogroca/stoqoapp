@@ -1,0 +1,25 @@
+# Configuracion de ruff (linter).
+#
+# Se eligieron reglas que detectan errores reales, no preferencias de estilo:
+# imports sin usar, variables asignadas y nunca leidas, comparaciones incorrectas
+# con None o True. Son la clase de residuo que deja el desarrollo iterativo.
+
+line-length = 90
+target-version = "py312"
+
+[lint]
+select = [
+    "E",   # errores de estilo de pycodestyle
+    "F",   # pyflakes: imports sin usar, nombres no definidos
+    "I",   # orden de los imports
+    "B",   # bugbear: patrones propensos a error
+    "UP",  # sintaxis anticuada que ya tiene mejor forma
+]
+ignore = [
+    "E501",  # largo de linea: lo controla el formateador, no bloquea el CI
+    "B008",  # Depends() en argumentos por defecto es el patron normal de FastAPI
+]
+
+[lint.per-file-ignores]
+# Las pruebas usan comparaciones directas y nombres largos a proposito.
+"tests/*" = ["E712"]
